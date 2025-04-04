@@ -5,32 +5,36 @@
         <title>One Word Story</title>
     </head>
 <body>
-    <h1>{{ story }}</h1>
+    <h1 id="story">{{ story or "The story starts here..."}}</h1>
     <form id="wordForm" method="post">
         <input type="text" id="wordInput" name="word" required autofocus>
         <button type="submit">Add Word</button>
     </form>
 
     <script>
-        // Live update via SSE
-        const storyEl = document.getElementById("story");
-        const source = new EventSource("/stream");
+        window.onload = function() {
 
-        source.onmessage = function(event) {
-            storyEl.textContent = event.data;
-        };
+            // Live update via SSE
+            const storyEl = document.getElementById("story");
+            const source = new EventSource("/stream");
 
-        // Handle word submission without full page reload
-        document.getElementById("wordForm").onsubmit = async function(event) {
-            event.preventDefault();
-            const input = document.getElementById("wordInput");
-            const word = input.value.trim();
+            source.onmessage = function(event) {
+                console.log("New story update:", event.data);  // Debugging log
+                storyEl.textContent = event.data;
+            };
 
-            if (word) {
-                await fetch("/", { method: "POST", body: new URLSearchParams({ word }) });
-                input.value = "";  // Clear input after submission
-            }
-        };
+            // Handle word submission without full page reload
+            document.getElementById("wordForm").onsubmit = async function(event) {
+                event.preventDefault();
+                const input = document.getElementById("wordInput");
+                const word = input.value.trim();
+
+                if (word) {
+                    await fetch("/", { method: "POST", body: new URLSearchParams({ word }) });
+                    input.value = "";  // Clear input after submission
+                }
+            };
+        }
     </script>
 </body>
 </html>

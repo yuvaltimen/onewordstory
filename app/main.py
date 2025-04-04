@@ -37,7 +37,7 @@ def index():
         if word:
             r.rpush(STORY_KEY, word)
             r.publish(CHANNEL, "update")
-            r.setex(rate_key, 5, "1")  # 3-second cooldown per IP
+            r.setex(rate_key, 3, "1")  # 3-second cooldown per IP
 
         return "", 204
 
