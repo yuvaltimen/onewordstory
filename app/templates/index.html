@@ -1,25 +1,93 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>One Word Story</title>
-    </head>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One Word Story</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 16px;
+        }
+
+        #story {
+            font-size: 1.5rem;
+            line-height: 1.8;
+            word-wrap: break-word;
+            margin-bottom: 16px;
+        }
+
+        #timer {
+            font-size: 1rem;
+            color: #888;
+            margin-bottom: 20px;
+        }
+
+        form {
+            display: flex;
+            gap: 8px;
+            width: 100%;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            font-size: 1.2rem;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+
+        button {
+            padding: 12px 16px;
+            font-size: 1.2rem;
+            background: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 6px;
+        }
+
+        button:active {
+            background: #0056b3;
+        }
+    </style>
+</head>
 <body>
-    <h1 id="story">{{ story or "Waiting for game start..."}}</h1>
+    <div class="container">
+        <div>
+            <div id="story">{{ story or "Waiting for game start..."}}</div>
+            <div id="timer">{{ timer }}</div>
+        </div>
 
-    <p><strong>Time Left: <span id="timer">{{ timer }}</span> sec.</strong></p>
-
-    <form id="wordForm" method="post">
-        <input type="text" id="wordInput" name="word" required autofocus>
-        <button type="submit">Add Word</button>
-    </form>
+        <form id="wordForm" method="post">
+            <input type="text" id="wordInput" name="word" autocomplete="off" required autofocus>
+            <button type="submit">Add Word</button>
+        </form>
+    </div>
+    
 
     <script>
-        window.onload = function() {
+        window.onload = function () {
 
             const eventSource = new EventSource("/stream");
-            eventSource.onmessage = function(event) {
+            eventSource.onmessage = function (event) {
                 console.log("Update:", event.data);
                 const [story, timer] = event.data.split("|");
                 document.getElementById("story").textContent = story.trim() ? story : "";
@@ -27,15 +95,15 @@
             };
 
             const timerSource = new EventSource("/timer");
-            timerSource.onmessage = function(event) {
+            timerSource.onmessage = function (event) {
                 document.getElementById("timer").textContent = event.data;
                 if (event.data === "0") {
                     endgame();
                 }
             };
-            
+
             // Handle word submission without full page reload
-            document.getElementById("wordForm").onsubmit = async function(event) {
+            document.getElementById("wordForm").onsubmit = async function (event) {
                 event.preventDefault();
                 const input = document.getElementById("wordInput");
                 const word = input.value.trim();
@@ -54,4 +122,5 @@
         }
     </script>
 </body>
+
 </html>
