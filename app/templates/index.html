@@ -1,11 +1,15 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>One Word Story</title>
     </head>
 <body>
     <h1 id="story">{{ story or "The story starts here..."}}</h1>
+
+    <p><strong>Time Left: <span id="timer">{{ timer }}</span> sec.</strong></p>
+
     <form id="wordForm" method="post">
         <input type="text" id="wordInput" name="word" required autofocus>
         <button type="submit">Add Word</button>
@@ -14,15 +18,22 @@
     <script>
         window.onload = function() {
 
-            // Live update via SSE
-            const storyEl = document.getElementById("story");
-            const source = new EventSource("/stream");
-
-            source.onmessage = function(event) {
-                console.log("New story update:", event.data);  // Debugging log
-                storyEl.textContent = event.data;
+            const eventSource = new EventSource("/stream");
+            eventSource.onmessage = function(event) {
+                console.log("Update:", event.data);
+                const [story, timer] = event.data.split("|");
+                document.getElementById("story").textContent = story;
+                document.getElementById("timer").textContent = timer;
             };
 
+            const timerSource = new EventSource("/timer");
+            timerSource.onmessage = function(event) {
+                document.getElementById("timer").textContent = event.data;
+                if (event.data === "0") {
+                    endgame();
+                }
+            };
+            
             // Handle word submission without full page reload
             document.getElementById("wordForm").onsubmit = async function(event) {
                 event.preventDefault();
@@ -35,6 +46,10 @@
                         input.value = "";  // Clear input after successful submission
                     }
                 }
+            };
+
+            function endgame() {
+                alert("Time's up! New game will start shortly...");
             };
         }
     </script>
