@@ -30,8 +30,10 @@
                 const word = input.value.trim();
 
                 if (word) {
-                    await fetch("/", { method: "POST", body: new URLSearchParams({ word }) });
-                    input.value = "";  // Clear input after submission
+                    const response = await fetch("/", { method: "POST", body: new URLSearchParams({ word }) });
+                    if (response.status >= 200 && response.status < 300) {
+                        input.value = "";  // Clear input after successful submission
+                    }
                 }
             };
         }
