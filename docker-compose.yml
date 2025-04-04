@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+
+  fucker1:
+    build: 
+      context: ./fucker
+    depends_on:
+      - web
+    environment:
+      - NAME=fucker1
+      - TARGET=http://web:5000
+
+  fucker2:
+    build: 
+      context: ./fucker
+    depends_on:
+      - web
+    environment:
+    - NAME=fucker2
+    - TARGET=http://web:5000
+
+  fucker3:
+    build: 
+      context: ./fucker
+    depends_on:
+      - web
+    environment:
+    - NAME=fucker3
+    - TARGET=http://web:5000
+
+
+  web:
+    build: .
+    ports:
+      - "8080:5000"
+    depends_on:
+      - redis
+    environment:
+      - FLASK_APP=main.py
+      - FLASK_RUN_HOST=0.0.0.0
+
+  redis:
+    image: redis:7-alpine
