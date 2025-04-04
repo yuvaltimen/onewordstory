@@ -148,7 +148,6 @@
 
                 if (!isCooldown) {
                     timerEl.textContent = "Time left: " + parsedTimer + "s.";
-                    startgame();
                 } else {
                     wordInput.disabled = true;
                 }
@@ -191,7 +190,8 @@
                         body: new URLSearchParams({ word }) 
                     });
                     if (response.ok) {
-                        input.value = "";
+                        wordInput.value = "";
+                        wordInput.focus();
                     }
                 }
             };
