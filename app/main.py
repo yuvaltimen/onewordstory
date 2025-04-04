@@ -1,13 +1,18 @@
 from flask import Flask, render_template, request, Response
 import redis
-import time
+import os
 
-app = Flask(__name__)
-r = redis.Redis(host='redis', port=6379, decode_responses=True)
+
+REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
+REDIS_PORT = 6379
 
 STORY_KEY = "story"
 CHANNEL = "story_updates"
 RATE_LIMIT_PREFIX = "user:"
+
+app = Flask(__name__)
+r = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True)
+
 
 def event_stream():
     pubsub = r.pubsub()
