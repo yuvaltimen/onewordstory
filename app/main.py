@@ -97,12 +97,21 @@ def start_timer():
     r.publish(TIMER_CHANNEL, "0")  # Ensure UI updates
     endgame()  # Call endgame when time runs out
 
+def start_cooldown_timer():
+    for remaining in range(GAME_COOLDOWN_TTL, 0, -1):
+        r.publish(TIMER_CHANNEL, f"cooldown:{remaining}")
+        time.sleep(1)
+    r.publish(TIMER_CHANNEL, "cooldown:0")
+
 
 def endgame():
     print("Game Over! Timer expired.")
     r.setex(GAME_COOLDOWN_KEY, GAME_COOLDOWN_TTL, "1")
     r.publish(STORY_CHANNEL, "clear")
     r.delete(STORY_KEY)
+    threading.Thread(target=start_cooldown_timer, daemon=True).start()
+
+
 
 
 if __name__ == "__main__":
