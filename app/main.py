@@ -11,6 +11,7 @@ REDIS_PORT = 6379
 
 STORY_KEY = "story"
 GAME_KEY = "game"
+GAME_MAX_WORDS = 10
 GAME_COOLDOWN_KEY = "game_cooldown"
 STORY_CHANNEL = "story_updates"
 TIMER_CHANNEL = "timer_updates"
@@ -68,6 +69,8 @@ def index():
 
         word = request.form.get("word", "").strip()
         if word:
+            if (r.llen(STORY_KEY) > GAME_MAX_WORDS) :
+                return "", 400
             r.rpush(STORY_KEY, word)
             r.publish(STORY_CHANNEL, "update")
             r.setex(rate_key, RATE_LIMIT_SECONDS, "1")

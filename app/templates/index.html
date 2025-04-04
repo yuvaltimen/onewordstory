@@ -90,7 +90,7 @@
             eventSource.onmessage = function (event) {
                 console.log("Update:", event.data);
                 const [story, timer] = event.data.split("|");
-                document.getElementById("story").textContent = story.trim() ? story : "";
+                document.getElementById("story").textContent = story.trim() ? story : null;
                 document.getElementById("timer").textContent = timer;
             };
 
