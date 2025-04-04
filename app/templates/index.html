@@ -97,7 +97,7 @@
         </div>
         <form id="wordForm" method="post">
             <input type="text" id="wordInput" name="word" autocomplete="off" required autofocus>
-            <button type="submit">Add Word</button>
+            <button type="submit" id="submitButton">Add Word</button>
         </form>
     </div>
 
@@ -110,24 +110,28 @@
             const cooldownEl = document.getElementById("cooldown");
             const wordInput = document.getElementById("wordInput");
             const wordForm = document.getElementById("wordForm");
+            const submitButton = document.getElementById("submitButton");
 
             function startgame() {
+                console.log("HIT startgame");
                 cooldownEl.style.display = "none";
                 cooldownEl.textContent = "";
                 wordInput.disabled = false;
+                submitButton.disabled = false;
                 wordInput.focus();
             };
 
             function endgame(cooldownTime) {
+                console.log(`HIT endgame ${cooldownTime}`);
                 cooldownEl.style.display = "block";
                 cooldownEl.textContent = `Game is cooling down. Try again in ${cooldownTime}s.`;
                 timerEl.textContent = "";
                 wordInput.disabled = true;
+                submitButton.disabled = true;
             };
 
             // Maintain focus on input when page loads or form is submitted
             setTimeout(() => wordInput.focus(), 500);
-            
             wordForm.addEventListener("submit", function () {
                 setTimeout(() => wordInput.focus(), 100);
             });
@@ -179,8 +183,7 @@
             // Handle word submission without full page reload
             wordForm.onsubmit = async function (event) {
                 event.preventDefault();
-                const input = document.getElementById("wordInput");
-                const word = input.value.trim();
+                const word = wordInput.value.trim();
 
                 if (word) {
                     const response = await fetch("/", { 
