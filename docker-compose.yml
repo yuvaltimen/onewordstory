@@ -2,31 +2,31 @@ version: '3.8'
 
 services:
 
-  fucker1:
+  client1:
     build: 
-      context: ./fucker
+      context: ./client
     depends_on:
       - web
     environment:
-      - NAME=fucker1
+      - NAME=client1
       - TARGET=http://web:5000
 
-  fucker2:
+  client2:
     build: 
-      context: ./fucker
+      context: ./client
     depends_on:
       - web
     environment:
-    - NAME=fucker2
+    - NAME=client2
     - TARGET=http://web:5000
 
-  fucker3:
+  client3:
     build: 
-      context: ./fucker
+      context: ./client
     depends_on:
       - web
     environment:
-    - NAME=fucker3
+    - NAME=client3
     - TARGET=http://web:5000
 
 
