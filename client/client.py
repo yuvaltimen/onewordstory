@@ -4,7 +4,7 @@ import random
 import requests
 
 
-TARGET = os.environ.get("TARGET", "http://web:5000")
+TARGET = os.environ.get("TARGET", "http://web:8080")
 MYNAME = os.environ.get("NAME", "UNKown")
 time.sleep(3)  # Wait for server to boot
 

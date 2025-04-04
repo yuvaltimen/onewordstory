@@ -9,7 +9,7 @@ services:
       - web
     environment:
       - NAME=client1
-      - TARGET=http://web:5000
+      - TARGET=http://web:8080
 
   client2:
     build: 
@@ -18,7 +18,7 @@ services:
       - web
     environment:
     - NAME=client2
-    - TARGET=http://web:5000
+    - TARGET=http://web:8080
 
   client3:
     build: 
@@ -27,13 +27,13 @@ services:
       - web
     environment:
     - NAME=client3
-    - TARGET=http://web:5000
+    - TARGET=http://web:8080
 
 
   web:
     build: .
     ports:
-      - "8080:5000"
+      - "8080:8080"
     depends_on:
       - redis
     environment:
