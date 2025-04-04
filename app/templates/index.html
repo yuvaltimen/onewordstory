@@ -6,7 +6,7 @@
         <title>One Word Story</title>
     </head>
 <body>
-    <h1 id="story">{{ story or "The story starts here..."}}</h1>
+    <h1 id="story">{{ story or "Waiting for game start..."}}</h1>
 
     <p><strong>Time Left: <span id="timer">{{ timer }}</span> sec.</strong></p>
 
@@ -22,7 +22,7 @@
             eventSource.onmessage = function(event) {
                 console.log("Update:", event.data);
                 const [story, timer] = event.data.split("|");
-                document.getElementById("story").textContent = story;
+                document.getElementById("story").textContent = story.trim() ? story : "";
                 document.getElementById("timer").textContent = timer;
             };
 
@@ -49,7 +49,7 @@
             };
 
             function endgame() {
-                alert("Time's up! New game will start shortly...");
+                alert("Time's up!");
             };
         }
     </script>

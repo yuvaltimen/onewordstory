@@ -11,9 +11,11 @@ REDIS_PORT = 6379
 
 STORY_KEY = "story"
 GAME_KEY = "game"
+GAME_COOLDOWN_KEY = "game_cooldown"
 STORY_CHANNEL = "story_updates"
 TIMER_CHANNEL = "timer_updates"
 GAME_TIMEOUT_SECONDS = 60
+GAME_COOLDOWN_TTL = 10
 RATE_LIMIT_SECONDS = 3
 RATE_LIMIT_PREFIX = "user:"
 
@@ -28,9 +30,12 @@ def event_stream():
 
     for message in pubsub.listen():
         if message['type'] == 'message':
-            story = " ".join(r.lrange(STORY_KEY, 0, -1))
-            timer = r.ttl(GAME_KEY)
-            yield f"data: {story}|{timer if timer > 0 else 0}\n\n"
+            if message['data'] == "clear":
+                yield f"data: |\n\n"  # Send empty story to the client
+            else:
+                story = " ".join(r.lrange(STORY_KEY, 0, -1))
+                timer = r.ttl(GAME_KEY)
+                yield f"data: {story}|{timer if timer > 0 else 0}\n\n"
 
 
 def timer_stream():
@@ -58,7 +63,7 @@ def index():
     rate_key = f"{RATE_LIMIT_PREFIX}{ip}"
 
     if request.method == "POST":
-        if r.exists(rate_key):
+        if r.exists(rate_key) or r.exists(GAME_COOLDOWN_KEY):
             return "Rate limited!", 429
 
         word = request.form.get("word", "").strip()
@@ -92,9 +97,9 @@ def start_timer():
 
 def endgame():
     print("Game Over! Timer expired.")
-    time.sleep(10)
+    r.setex(GAME_COOLDOWN_KEY, GAME_COOLDOWN_TTL, "1")
+    r.publish(STORY_CHANNEL, "clear")
     r.delete(STORY_KEY)
-    
 
 
 if __name__ == "__main__":
