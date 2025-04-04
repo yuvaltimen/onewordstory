@@ -138,7 +138,7 @@
 
             const eventSource = new EventSource("/stream");
             eventSource.onmessage = function (event) {
-                console.log("DEBUG:", event.data);
+                console.log("STREAM:", event.data);
 
                 const [story, timer] = event.data.split("|");
                 const parsedTimer = parseInt(timer);
@@ -156,6 +156,7 @@
             const timerSource = new EventSource("/timer");
             timerSource.onmessage = function (event) {
                 const data = event.data;
+                console.log("TIMER:", data);
 
                 if (data.startsWith("cooldown:")) {
                     const cooldownTime = parseInt(data.split(":")[1]);

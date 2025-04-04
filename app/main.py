@@ -64,21 +64,25 @@ def index():
     rate_key = f"{RATE_LIMIT_PREFIX}{ip}"
 
     if request.method == "POST":
-        if r.exists(rate_key) or r.exists(GAME_COOLDOWN_KEY):
+        if r.exists(GAME_COOLDOWN_KEY):
+            return "Game cooling down", 400
+        if r.exists(rate_key):
             return "Rate limited!", 429
+        
+        # If the timer isn't already running, start it
+        if not r.exists(GAME_KEY):
+            r.setex(GAME_KEY, GAME_TIMEOUT_SECONDS, "1")
+            threading.Thread(target=start_timer, daemon=True).start()
 
         word = request.form.get("word", "").strip()
         if word:
-            if (r.llen(STORY_KEY) > GAME_MAX_WORDS) :
-                return "", 400
-            r.rpush(STORY_KEY, word)
-            r.publish(STORY_CHANNEL, "update")
-            r.setex(rate_key, RATE_LIMIT_SECONDS, "1")
-        
-            # If the timer isn't already running, start it
-            if not r.exists(GAME_KEY):
-                r.setex(GAME_KEY, GAME_TIMEOUT_SECONDS, "1")
-                threading.Thread(target=start_timer, daemon=True).start()
+            if (r.llen(STORY_KEY) >= GAME_MAX_WORDS):
+                return f"Max words: {GAME_MAX_WORDS}", 400
+            else:
+                r.rpush(STORY_KEY, word)
+                r.publish(STORY_CHANNEL, "update")
+                r.setex(rate_key, RATE_LIMIT_SECONDS, "1")
+            
 
         return "", 204
 
