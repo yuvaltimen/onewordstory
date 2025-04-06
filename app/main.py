@@ -60,7 +60,7 @@ def timer():
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    ip = request.remote_addr
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(',')[0]
     rate_key = f"{RATE_LIMIT_PREFIX}{ip}"
 
     if request.method == "POST":
