@@ -1,3 +1,5 @@
 .env*
 .DS_Store
 .idea
+Mock Image for the UI.png
+**/__pycache__/**
