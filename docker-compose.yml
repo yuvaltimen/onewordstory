@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
 
   client1:
@@ -28,7 +26,6 @@ services:
     environment:
     - NAME=client3
     - TARGET=http://web:8080
-
 
   web:
     build: .
