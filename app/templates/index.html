@@ -8,20 +8,52 @@
     <link rel="apple-touch-icon" href="{{ url_for('static',filename='zibbit_frog_icon.png') }}">
     <link rel="icon" href="{{ url_for('static',filename='zibbit_frog_icon.png') }}">
     <link rel="stylesheet" type="text/css" href="{{ url_for('static',filename='styles/styles.css') }}">
-    <script src="{{ url_for('static', filename='script.js' )}}" async></script>
+    <script src="{{ url_for('static', filename='script.js' )}}" defer></script>
 </head>
 
 <body>
-    <div class="container">
-        <div>
-            <div id="cooldown">Game is cooling down. Try again shortly.</div>
-            <div id="timer">{{ timer }}</div>
-            <div id="story">{{ story }}</div>
+<section class="app-wrapper">
+    <div class="header">
+        <h1>Zibbit!</h1>
+        <div class="top-bar">
+            <div id="game-timer">⏳ 0s</div>
         </div>
-        <form id="wordForm" method="post">
-            <input type="text" id="wordInput" name="word" autocomplete="off" required autofocus>
-            <button type="submit" id="submitButton">Add Word</button>
-        </form>
     </div>
+
+    <main class="main">
+        <section id="story-section">
+            <div id="story">
+                {% for word in story.split() %}
+                <span class="story-word" data-word="{{ word }}">{{ word }}</span>
+                {% endfor %}
+            </div>
+            <div id="cooldown" class="cooldown hidden">Cooling down... Please wait.</div>
+        </section>
+
+        <section id="candidate-section">
+            <div class="candidate-submission">
+                <form id="candidateForm" method="POST">
+                    <label for="candidate-input">what is zibbit thinking?</label>
+                    <input type="text" id="candidate-input" placeholder="Suggest next phrase..." required/>
+                    <button id="submit-btn">Submit</button>
+                </form>
+            </div>
+
+            <div class="candidates">
+                <h2>Vote on the next phrase:</h2>
+                <ul id="candidate-list">
+                    {% for phrase in candidate_phrases %}
+                    <li data-phrase="{{ phrase }}">
+                        <span class="phrase-text">{{ phrase }}</span>
+                        <button class="vote-btn">👍(<span class="vote-count">0</span>)</button>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </section>
+
+    </main>
+</section>
 </body>
+
 </html>

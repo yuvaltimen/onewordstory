@@ -1,94 +1,161 @@
-window.onload = function () {
+
+
+function handleGameStart() {
+
+}
+
+function handleGameEnd() {
+
+}
+
+function handleGameStateUpdate(gameState) {
+
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    console.log("Content loaded");
 
     const storyEl = document.getElementById("story");
-    const timerEl = document.getElementById("timer");
-    const cooldownEl = document.getElementById("cooldown");
-    const wordInput = document.getElementById("wordInput");
-    const wordForm = document.getElementById("wordForm");
-    const submitButton = document.getElementById("submitButton");
+    const timerEl = document.getElementById("game-timer");
+    const candidateListEl = document.getElementById("candidate-list");
+    const candidateInput = document.getElementById("candidate-input");
+    const submitBtn = document.getElementById("submit-btn");
 
-    function startgame() {
-        console.log("HIT startgame");
-        cooldownEl.style.display = "none";
-        cooldownEl.textContent = "";
-        wordInput.disabled = false;
-        submitButton.disabled = false;
-        wordInput.focus();
-    };
+    // Set up SSE connection
+    const source = new EventSource("/events");
 
-    function endgame(cooldownTime) {
-        console.log(`HIT endgame ${cooldownTime}`);
-        cooldownEl.style.display = "block";
-        cooldownEl.textContent = `Game is cooling down. Try again in ${cooldownTime}s.`;
-        timerEl.textContent = "";
-        wordInput.disabled = true;
-        submitButton.disabled = true;
-    };
+    // Listen for custom events
+    source.addEventListener("", (event) => {
 
-    // Maintain focus on input when page loads or form is submitted
-    setTimeout(() => wordInput.focus(), 500);
-    wordForm.addEventListener("submit", function () {
-        setTimeout(() => wordInput.focus(), 100);
+    });
+    //
+    // source.onmessage = (e) => {
+    //
+    //     // const data = JSON.parse(e.data);
+    //     const data = {
+    //         "game_start_utc_time":"2025-04-07T18:52:00Z",
+    //         "game_start_end_time":"2025-04-07T18:54:00Z",
+    //         "game_status":"IN_PLAY",
+    //         "story":[
+    //             {
+    //                 "word":"The",
+    //                 "flags":0
+    //             },
+    //             {
+    //                 "word":"story",
+    //                 "flags":0
+    //             },
+    //             {
+    //                 "word":"starts",
+    //                 "flags":1
+    //             }
+    //         ],
+    //         "candidates":[
+    //             {
+    //                 "phrase":"with a very short",
+    //                 "votes":1
+    //             },
+    //             {
+    //                 "phrase":"on a dark and stormy",
+    //                 "votes":1
+    //             },
+    //             {
+    //                 "phrase":"off on a",
+    //                 "votes":1
+    //             },
+    //             {
+    //                 "phrase":"to sound like",
+    //                 "votes":1
+    //             }
+    //         ]
+    //     };
+    //
+    //
+    //
+    //     switch (data.type) {
+    //         case "timer_update":
+    //             timerEl.textContent = `⏳ ${data.timer}s`;
+    //             break;
+    //         case "game_start":
+    //             timerEl.textContent = `⏳ ${data.timer}s`;
+    //             candidateInput.disabled = false;
+    //             submitBtn.disabled = false;
+    //             candidateListEl.innerHTML = ""; // Clear any leftover phrases
+    //             break;
+    //         case "game_end":
+    //             timerEl.textContent = "Done!";
+    //             candidateInput.disabled = true;
+    //             submitBtn.disabled = true;
+    //             break;
+    //         case "story_update":
+    //             storyEl.textContent = data.story;
+    //             break;
+    //         case "new_candidate":
+    //             addCandidateToList(data.phrase);
+    //             break;
+    //         case "vote_update":
+    //             updateVoteCount(data.phrase, data.votes);
+    //             break;
+    //         case "winner_chosen":
+    //             // Optional: highlight winner
+    //             highlightWinner(data.phrase);
+    //             break;
+    //     }
+    // };
+
+    // Submit candidate
+    submitBtn.addEventListener("click", () => {
+        const value = candidateInput.value.trim();
+        if (value) {
+            fetch("/submit_candidate", {
+                method: "POST",
+                body: new URLSearchParams({ candidate: value }),
+            });
+            candidateInput.value = "";
+        }
     });
 
-    const eventSource = new EventSource("/stream");
-    eventSource.onmessage = function (event) {
-        console.log("STREAM:", event.data);
+    // Helpers
+    function addCandidateToList(phrase) {
+        const item = document.createElement("div");
+        item.className = "candidate-item";
+        item.dataset.phrase = phrase;
 
-        const [story, timer] = event.data.split("|");
-        const parsedTimer = parseInt(timer);
-        const isCooldown = parsedTimer <= 0;
+        const text = document.createElement("span");
+        text.textContent = phrase;
 
-        storyEl.textContent = story.trim() ? story : "Waiting for game start...";
+        const vote = document.createElement("span");
+        vote.className = "vote-count";
+        vote.textContent = "0";
 
-        if (!isCooldown) {
-            timerEl.textContent = "Time left: " + parsedTimer + "s.";
-        } else {
-            wordInput.disabled = true;
-        }
-    };
+        item.appendChild(text);
+        item.appendChild(vote);
+        candidateListEl.appendChild(item);
 
-    const timerSource = new EventSource("/timer");
-    timerSource.onmessage = function (event) {
-        const data = event.data;
-        console.log("TIMER:", data);
-
-        if (data.startsWith("cooldown:")) {
-            const cooldownTime = parseInt(data.split(":")[1]);
-            endgame(cooldownTime);
-
-            if (cooldownTime === 0) {
-                startgame();
-            }
-            return
-        }
-
-        const timeLeft = parseInt(data);
-
-        if (!isNaN(timeLeft)) {
-            timerEl.textContent = "Time left: " + timeLeft + "s.";
-
-            if (timeLeft === 0) {
-                wordInput.disabled = true;
-                endgame(10);
-            }
-        }
-    };
-
-    // Handle word submission without full page reload
-    wordForm.onsubmit = async function (event) {
-        event.preventDefault();
-        const word = wordInput.value.trim();
-
-        if (word) {
-            const response = await fetch("/", {
+        item.addEventListener("click", () => {
+            fetch("/vote", {
                 method: "POST",
-                body: new URLSearchParams({ word })
+                body: new URLSearchParams({ phrase }),
             });
-            if (response.ok) {
-                wordInput.value = "";
-                wordInput.focus();
+        });
+    }
+
+    function updateVoteCount(phrase, votes) {
+        const items = document.querySelectorAll(".candidate-item");
+        items.forEach(item => {
+            if (item.dataset.phrase === phrase) {
+                const voteSpan = item.querySelector(".vote-count");
+                if (voteSpan) voteSpan.textContent = votes;
             }
-        }
-    };
-}
+        });
+    }
+
+    function highlightWinner(phrase) {
+        const items = document.querySelectorAll(".candidate-item");
+        items.forEach(item => {
+            if (item.dataset.phrase === phrase) {
+                item.classList.add("winner");
+            }
+        });
+    }
+});

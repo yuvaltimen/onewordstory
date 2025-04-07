@@ -1,31 +1,31 @@
 services:
-
-  client1:
-    build: 
-      context: ./client
-    depends_on:
-      - web
-    environment:
-      - NAME=client1
-      - TARGET=http://web:8080
-
-  client2:
-    build: 
-      context: ./client
-    depends_on:
-      - web
-    environment:
-    - NAME=client2
-    - TARGET=http://web:8080
-
-  client3:
-    build: 
-      context: ./client
-    depends_on:
-      - web
-    environment:
-    - NAME=client3
-    - TARGET=http://web:8080
+#
+#  client1:
+#    build:
+#      context: ./client
+#    depends_on:
+#      - web
+#    environment:
+#      - NAME=client1
+#      - TARGET=http://web:8080
+#
+#  client2:
+#    build:
+#      context: ./client
+#    depends_on:
+#      - web
+#    environment:
+#    - NAME=client2
+#    - TARGET=http://web:8080
+#
+#  client3:
+#    build:
+#      context: ./client
+#    depends_on:
+#      - web
+#    environment:
+#    - NAME=client3
+#    - TARGET=http://web:8080
 
   web:
     build: .

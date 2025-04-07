@@ -1,122 +1,59 @@
-from flask import Flask, render_template, request, Response
-import redis
 import os
-import time
-import threading
-
+from app.zibbit import ZibbitGame
+from flask import Flask, render_template, request, Response, stream_with_context
 
 REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = 6379
 
-
-STORY_KEY = "story"
-GAME_KEY = "game"
-GAME_MAX_WORDS = 10
-GAME_COOLDOWN_KEY = "game_cooldown"
-STORY_CHANNEL = "story_updates"
-TIMER_CHANNEL = "timer_updates"
-GAME_TIMEOUT_SECONDS = 15
-GAME_COOLDOWN_TTL = 10
-RATE_LIMIT_SECONDS = 3
-RATE_LIMIT_PREFIX = "user:"
-
-
 app = Flask(__name__)
-r = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True)
+zg = ZibbitGame(redis_host=REDIS_HOST, redis_port=REDIS_PORT)
 
-
+# SSE: Streaming updates
 def event_stream():
-    pubsub = r.pubsub()
-    pubsub.subscribe(STORY_CHANNEL)
-
-    for message in pubsub.listen():
-        if message['type'] == 'message':
-            if message['data'] == "clear":
-                yield f"data: |\n\n"  # Send empty story to the client
-            else:
-                story = " ".join(r.lrange(STORY_KEY, 0, -1))
-                timer = r.ttl(GAME_KEY)
-                yield f"data: {story}|{timer if timer > 0 else 0}\n\n"
+    global zg
+    while True:
+        data = zg.get_game_state()
+        print(f"data: {data}")
+        yield f"data: {data}\n\n"
 
 
-def timer_stream():
-    pubsub = r.pubsub()
-    pubsub.subscribe(TIMER_CHANNEL)
-
-    for message in pubsub.listen():
-        if message['type'] == 'message':
-            yield f"data: {message['data']}\n\n"
-
-
-@app.route("/stream")
-def stream():
-    return Response(event_stream(), mimetype="text/event-stream")
-
-
-@app.route("/timer")
-def timer():
-    return Response(timer_stream(), mimetype="text/event-stream")
-
-
-@app.route("/", methods=["GET", "POST"])
+@app.route('/')
 def index():
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(',')[0]
-    rate_key = f"{RATE_LIMIT_PREFIX}{ip}"
+    global zg
+    print("requested /")
+    return render_template("index.html", **zg.get_game_state())
 
-    if request.method == "POST":
-        if r.exists(GAME_COOLDOWN_KEY):
-            return "Game cooling down", 400
-        if r.exists(rate_key):
-            return "Rate limited!", 429
-        
-        # If the timer isn't already running, start it
-        if not r.exists(GAME_KEY):
-            r.setex(GAME_KEY, GAME_TIMEOUT_SECONDS, "1")
-            threading.Thread(target=start_timer, daemon=True).start()
-
-        word = request.form.get("word", "").strip()
-        if word:
-            if (r.llen(STORY_KEY) >= GAME_MAX_WORDS):
-                return f"Max words: {GAME_MAX_WORDS}", 400
-            else:
-                r.rpush(STORY_KEY, word)
-                r.publish(STORY_CHANNEL, "update")
-                r.setex(rate_key, RATE_LIMIT_SECONDS, "1")
-            
-
-        return "", 204
-
-    story = " ".join(r.lrange(STORY_KEY, 0, -1))
-    timer = r.ttl(GAME_KEY)
-    return render_template("index.html", story=story, timer=timer if timer > 0 else 0)
+@app.route('/events')
+def sse_events():
+    global zg
+    print("requested /events")
+    return Response(stream_with_context(zg.event_stream()), mimetype="text/event-stream")
 
 
-def start_timer():
-    """Handles the countdown timer and triggers endgame()"""
-    while r.ttl(GAME_KEY) > 0:
-        time_left = r.ttl(GAME_KEY)
-        r.publish(TIMER_CHANNEL, str(time_left))
-        time.sleep(1)
-
-    r.publish(TIMER_CHANNEL, "0")  # Ensure UI updates
-    endgame()  # Call endgame when time runs out
-
-def start_cooldown_timer():
-    for remaining in range(GAME_COOLDOWN_TTL, 0, -1):
-        r.publish(TIMER_CHANNEL, f"cooldown:{remaining}")
-        time.sleep(1)
-    r.publish(TIMER_CHANNEL, "cooldown:0")
+@app.route('/submit_candidate', methods=['POST'])
+def submit_candidate():
+    global zg
+    print("requested /submit_candidate")
+    phrase = request.form.get("candidate", "").strip()
+    if zg.handle_phrase_submission(phrase):
+        return '', 204
+    else:
+        return f'', 400
 
 
-def endgame():
-    print("Game Over! Timer expired.")
-    r.setex(GAME_COOLDOWN_KEY, GAME_COOLDOWN_TTL, "1")
-    r.publish(STORY_CHANNEL, "clear")
-    r.delete(STORY_KEY)
-    threading.Thread(target=start_cooldown_timer, daemon=True).start()
+@app.route('/vote', methods=['POST'])
+def vote():
+    print("requested /vote")
+    global zg
+    candidate = request.form.get("phrase", "").strip()
+    if not candidate:
+        return 'Empty', 400
+
+    if zg.handle_vote(candidate):
+        return '', 204
+    else:
+        return 'Not allowed to do that', 400
 
 
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(host="0.0.0.0", port=8080, debug=True)
