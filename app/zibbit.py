@@ -105,6 +105,7 @@ class ZibbitGame:
     async def get_game_state(self):
         story = await self.redis.get(STORY_KEY) or []
         candidates = await self.redis.keys(CANDIDATES_KEY_PREFIX) or []
+        print(candidates)
 
         gs = json.dumps({
             "story": " ".join(story),

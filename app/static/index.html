@@ -23,9 +23,10 @@
     <main class="main">
         <section id="story-section">
             <div id="story">
-                {% for word in story.split() %}
-                <span class="story-word" data-word="{{ word }}">{{ word }}</span>
-                {% endfor %}
+                <span class="story-word" data-word="the">The</span>
+                <span class="story-word" data-word="quick">quick</span>
+                <span class="story-word" data-word="brown">brown</span>
+                <span class="story-word" data-word="fox">fox</span>
             </div>
             <div id="cooldown" class="cooldown hidden">Cooling down... Please wait.</div>
         </section>
@@ -33,7 +34,6 @@
         <section id="candidate-section">
             <div class="candidate-submission">
                 <form id="candidateForm" method="POST">
-                    <label for="candidate-input">what is zibbit thinking?</label>
                     <input type="text" id="candidate-input" placeholder="Suggest next phrase..." required/>
                     <button id="submit-btn">Submit</button>
                 </form>
@@ -42,18 +42,28 @@
             <div class="candidates">
                 <h2>Vote on the next phrase:</h2>
                 <ul id="candidate-list">
-                    {% for phrase in candidate_phrases %}
-                    <li data-phrase="{{ phrase }}">
-                        <span class="phrase-text">{{ phrase }}</span>
-                        <button class="vote-btn">👍(<span class="vote-count">0</span>)</button>
+                    <li data-phrase="jumped over the lazy">
+                        <button class="vote-btn">
+                            <span class="phrase-text">jumped over the lazy</span>
+                            <span class="vote-count">0</span>
+                        </button>
                     </li>
-                    {% endfor %}
+                    <li data-phrase="ran through the mud">
+                        <button class="vote-btn">
+                            <span class="phrase-text">ran through the mud</span>
+                            <span class="vote-count">0</span>
+                        </button>
+                    </li>
+                    <li data-phrase="didn't give a shit">
+                        <button class="vote-btn">
+                            <span class="phrase-text">didn't give a shit</span>
+                            <span class="vote-count">0</span>
+                        </button>
+                    </li>
                 </ul>
             </div>
         </section>
-
     </main>
 </section>
 </body>
-
 </html>
