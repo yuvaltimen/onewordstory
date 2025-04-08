@@ -18,7 +18,7 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting up FastAPI app...")
-    # asyncio.create_task(zg.timer_loop())
+    asyncio.create_task(zg.timer_loop())
     yield
     print("Shutting down FastAPI app...")
 
