@@ -1,5 +1,8 @@
 import datetime
 import json
+import aioschedule as schedule
+
+import asyncio
 import redis.asyncio as redis
 
 """
@@ -59,6 +62,12 @@ Game state looks like:
 }
 """
 
+# Game status (ex. COOLDOWN or IN_PLAY)
+GAME_STATUS_KEY = "game_status"
+# Stores current time remaining in game cooldown timer
+GAME_IN_PLAY_TIMER_SECONDS = "game_in_play_timer"
+# Stores current time remaining in game cooldown timer
+GAME_COOLDOWN_TIMER_SECONDS = "game_cooldown_timer"
 # Stores the story as a list
 STORY_KEY = "story"
 # Prefix for phrases that are in cooldown period
@@ -74,6 +83,7 @@ GAME_EVENTS_CHANNEL = "game_events"
 # Prefix for storing story words to flag counter
 STORY_FLAG_KEY_PREFIX = "story_flag"
 
+
 # Length of a game
 GAME_LENGTH_SECONDS = 120
 # Length of cooldown between games
@@ -86,40 +96,51 @@ CANDIDATE_SUBMISSION_COOLDOWN_SECONDS = 20
 
 class ZibbitGame:
 
-    # async def set_data(self, key, value):
-    #     await self.redis.set(key, value)
-    #     await self.redis.publish("updates", f"{key}={value}")
-    #
-    # async def get_data(self, key):
-    #     return await self.redis.get(key)
-
-    def pubsub(self):
-        return self.redis.pubsub()
-
     def __init__(self, redis_host="redis", redis_port=6379):
         self.game_status = "COOLDOWN"
         self.game_start_utc_time = None
         self.game_end_utc_time = None
         self.redis = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
 
+    def pubsub(self):
+        return self.redis.pubsub()
+
+    async def timer_loop(self):
+        while True:
+            # On server startup, the first phase should be cooldown
+            await self.handle_end_game()
+            # Start the cooldown timer
+            for i in range(GAME_COOLDOWN_SECONDS, 0, -1):
+                await self.redis.set(GAME_COOLDOWN_TIMER_SECONDS, i)
+                # Each cooldown step, broadcast the state to the clients
+                await self.broadcast_game_state()
+                await asyncio.sleep(1)
+
+            # Call the function to set start game data
+            await self.handle_start_game()
+            # Start game timer, n
+            for i in range(GAME_LENGTH_SECONDS, 0, -1):
+                await self.redis.set(GAME_IN_PLAY_TIMER_SECONDS, i)
+                # Each game step, broadcast the state to the clients
+                await self.broadcast_game_state()
+                await asyncio.sleep(1)
+
+    async def broadcast_game_state(self):
+        await self.redis.publish(GAME_EVENTS_CHANNEL, await self.get_game_state())
+
     async def get_game_state(self):
         story = await self.redis.get(STORY_KEY) or []
-        candidates = await self.redis.keys(CANDIDATES_KEY_PREFIX) or []
-        print(candidates)
-
-        gs = json.dumps({
+        candidates = await self.redis.keys(f"{CANDIDATES_KEY_PREFIX}:*")
+        game_status = await self.redis.get(GAME_STATUS_KEY) or "ERROR"
+        return json.dumps({
             "story": " ".join(story),
             "candidates": candidates,
-            "game_status": self.game_status,
+            "game_status": game_status,
             "game_start_utc_time": self.game_start_utc_time,
             "game_end_utc_time": self.game_end_utc_time
         })
 
-        print(f"serialized: {gs}")
-        return gs
-
-
-    async def start_game(self) -> None:
+    async def handle_start_game(self) -> None:
         # Handle clearing previous game state data from Redis
         await self.clear_redis()
 
@@ -127,10 +148,14 @@ class ZibbitGame:
         now = datetime.datetime.now(datetime.UTC)
         self.game_start_utc_time = now
         self.game_end_utc_time = now + datetime.timedelta(seconds=GAME_LENGTH_SECONDS)
-        self.game_status = "IN_PLAY"
+        await self.redis.setex(GAME_STATUS_KEY, GAME_LENGTH_SECONDS, "IN_PLAY")
 
-        # Broadcast state
-        await self.redis.publish(GAME_EVENTS_CHANNEL, await self.get_game_state())
+        await self.broadcast_game_state()
+
+    async def handle_end_game(self) -> None:
+        await self.redis.setex(GAME_STATUS_KEY, GAME_COOLDOWN_SECONDS, "COOLDOWN")
+        await self.broadcast_game_state()
+
 
     async def clear_redis(self) -> None:
         # Clear story
@@ -155,7 +180,7 @@ class ZibbitGame:
             candidate_key = f"{CANDIDATES_KEY_PREFIX}:{phrase}"
             await self.redis.setex(candidate_key, CANDIDATE_DECAY_SECONDS, 0)
             await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
-            await self.redis.publish(GAME_EVENTS_CHANNEL, await self.get_game_state())
+            await self.broadcast_game_state()
             return True
 
     async def handle_vote(self, candidate: str) -> bool:
@@ -167,7 +192,7 @@ class ZibbitGame:
             cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{candidate}"
             await self.redis.setex(candidate_key, remaining_ttl + (candidate_num_votes + 1), candidate_num_votes + 1)
             await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
-            await self.redis.publish(GAME_EVENTS_CHANNEL, await self.get_game_state())
+            await self.broadcast_game_state()
             return True
         else:
             return False
@@ -186,5 +211,5 @@ class ZibbitGame:
             await self.redis.rpush(STORY_KEY, *new_story)
         else:
             await self.redis.incr(word_flag_key)
-        await self.redis.publish(GAME_EVENTS_CHANNEL, json.dumps(self.get_game_state()))
+        await self.broadcast_game_state()
         return True

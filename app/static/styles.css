@@ -26,6 +26,11 @@ body, html {
     color: white;
     padding: 1rem;
     text-align: center;
+    display: flex;
+    gap: 4rem;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
 }
 
 .header h1 {

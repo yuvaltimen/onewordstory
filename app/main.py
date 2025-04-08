@@ -1,4 +1,6 @@
 import os
+import asyncio
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -10,11 +12,20 @@ from zibbit import ZibbitGame, GAME_EVENTS_CHANNEL
 
 REDIS_HOST = "yuvaltimen.xyz"  #os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = 6379
+zg = ZibbitGame(redis_host=REDIS_HOST, redis_port=REDIS_PORT)
 static_dir = os.path.join(os.path.dirname(__file__), "static")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Starting up FastAPI app...")
+    # asyncio.create_task(zg.timer_loop())
+    yield
+    print("Shutting down FastAPI app...")
 
 app = FastAPI(
     title="Zibbit!",
-    description="The consensus-based game"
+    description="The consensus-based game",
+    lifespan=lifespan
 )
 app.add_middleware(
     CORSMiddleware,
@@ -22,7 +33,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-zg = ZibbitGame(redis_host=REDIS_HOST, redis_port=REDIS_PORT)
+
 
 @app.get('/events')
 async def sse_events():
@@ -71,6 +82,7 @@ async def submit_word_flag(request: Request):
         return JSONResponse(status_code=200, content='Flag submitted')
     else:
         return JSONResponse(status_code=400, content='Unable to submit flag')
+
 
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
