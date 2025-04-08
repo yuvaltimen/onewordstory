@@ -8,16 +8,7 @@ REDIS_PORT = 6379
 app = Flask(__name__)
 zg = ZibbitGame(redis_host=REDIS_HOST, redis_port=REDIS_PORT)
 
-# SSE: Streaming updates
-def event_stream():
-    global zg
-    while True:
-        data = zg.get_game_state()
-        print(f"data: {data}")
-        yield f"data: {data}\n\n"
-
-
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
     global zg
     print("requested /")
@@ -29,7 +20,6 @@ def sse_events():
     print("requested /events")
     return Response(stream_with_context(zg.event_stream()), mimetype="text/event-stream")
 
-
 @app.route('/submit_candidate', methods=['POST'])
 def submit_candidate():
     global zg
@@ -38,8 +28,7 @@ def submit_candidate():
     if zg.handle_phrase_submission(phrase):
         return '', 204
     else:
-        return f'', 400
-
+        return '', 400
 
 @app.route('/vote', methods=['POST'])
 def vote():
@@ -52,7 +41,17 @@ def vote():
     if zg.handle_vote(candidate):
         return '', 204
     else:
-        return 'Not allowed to do that', 400
+        return '', 400
+
+@app.route('/flag_word', methods=['POST'])
+def submit_word_flag():
+    global zg
+    print("requested /flag_word")
+    word = request.form.get("word", "").strip()
+    if zg.handle_word_flag(word):
+        return '', 204
+    else:
+        return '', 400
 
 
 if __name__ == '__main__':
