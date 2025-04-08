@@ -1,9 +1,6 @@
-import asyncio
 import datetime
 import json
-from typing import Generator, Any
-
-from redis.asyncio import StrictRedis
+import redis.asyncio as redis
 
 """
 Zibbit is a consensus-building game. 
@@ -60,7 +57,6 @@ Game state looks like:
         }
     ]
 }
-
 """
 
 # Stores the story as a list
@@ -88,43 +84,43 @@ CANDIDATE_DECAY_SECONDS = 10
 CANDIDATE_SUBMISSION_COOLDOWN_SECONDS = 20
 
 
-
-
-
 class ZibbitGame:
+
+    # async def set_data(self, key, value):
+    #     await self.redis.set(key, value)
+    #     await self.redis.publish("updates", f"{key}={value}")
+    #
+    # async def get_data(self, key):
+    #     return await self.redis.get(key)
+
+    def pubsub(self):
+        return self.redis.pubsub()
+
     def __init__(self, redis_host="redis", redis_port=6379):
         self.game_status = "COOLDOWN"
         self.game_start_utc_time = None
         self.game_end_utc_time = None
-        self.redis = StrictRedis(host=redis_host, port=redis_port, db=0, decode_responses=True)
+        self.redis = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
 
-    def get_game_state(self):
-        story = self.redis.get(STORY_KEY) or []
-        candidates = self.redis.keys(CANDIDATES_KEY_PREFIX) or []
-        return {
+    async def get_game_state(self):
+        story = await self.redis.get(STORY_KEY) or []
+        candidates = await self.redis.keys(CANDIDATES_KEY_PREFIX) or []
+
+        gs = json.dumps({
             "story": " ".join(story),
             "candidates": candidates,
             "game_status": self.game_status,
             "game_start_utc_time": self.game_start_utc_time,
             "game_end_utc_time": self.game_end_utc_time
-        }
+        })
 
-    def event_stream(self) -> Generator[str, Any, None]:
-        pubsub = self.redis.pubsub()
-        pubsub.subscribe(GAME_EVENTS_CHANNEL)
+        print(f"serialized: {gs}")
+        return gs
 
-        async with pubsub.listen() as ps:
-            print(ps)
-            async for i in ps:
-                i
 
-            if message["type"] == "message":
-                data = json.loads(message["data"])
-                yield f"data: {data}\n\n"
-
-    def start_game(self) -> None:
+    async def start_game(self) -> None:
         # Handle clearing previous game state data from Redis
-        self.clear_redis()
+        await self.clear_redis()
 
         # Set the game state data to a new game
         now = datetime.datetime.now(datetime.UTC)
@@ -133,7 +129,7 @@ class ZibbitGame:
         self.game_status = "IN_PLAY"
 
         # Broadcast state
-        self.redis.publish(GAME_EVENTS_CHANNEL, json.dumps(self.get_game_state()))
+        await self.redis.publish(GAME_EVENTS_CHANNEL, await self.get_game_state())
 
     async def clear_redis(self) -> None:
         # Clear story
@@ -158,7 +154,7 @@ class ZibbitGame:
             candidate_key = f"{CANDIDATES_KEY_PREFIX}:{phrase}"
             await self.redis.setex(candidate_key, CANDIDATE_DECAY_SECONDS, 0)
             await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
-            await self.redis.publish(GAME_EVENTS_CHANNEL, json.dumps(self.get_game_state()))
+            await self.redis.publish(GAME_EVENTS_CHANNEL, await self.get_game_state())
             return True
 
     async def handle_vote(self, candidate: str) -> bool:
@@ -170,6 +166,7 @@ class ZibbitGame:
             cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{candidate}"
             await self.redis.setex(candidate_key, remaining_ttl + (candidate_num_votes + 1), candidate_num_votes + 1)
             await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
+            await self.redis.publish(GAME_EVENTS_CHANNEL, await self.get_game_state())
             return True
         else:
             return False
@@ -186,8 +183,7 @@ class ZibbitGame:
             new_story = filter(lambda x: x.decode("utf-8") != word, story)
             await self.redis.delete(STORY_KEY)
             await self.redis.rpush(STORY_KEY, *new_story)
-            return True
         else:
             await self.redis.incr(word_flag_key)
-            return True
-
+        await self.redis.publish(GAME_EVENTS_CHANNEL, json.dumps(self.get_game_state()))
+        return True
