@@ -1,4 +1,28 @@
 
+function handleGameStartEvent(event) {
+    handleGameTimerUpdate(event["game_end_utc_time"]);
+}
+
+function updateTimer(utcTimestamp, interval) {
+    const now = Date.now();
+    const diffMs = utcTimestamp - now;
+
+    if (diffMs <= 0) {
+        clearInterval(interval);
+        return "Time's up!";
+    }
+
+    const seconds = Math.floor((diffMs / 1000) % 60);
+    const minutes = Math.floor((diffMs / (1000 * 60)) % 60);
+    const parts = [
+        minutes > 0 ? `${minutes}m` : '',
+        `${seconds}s`
+    ].filter(Boolean);
+
+    return parts.join(' ');
+}
+
+
 function handleStoryUpdate(storyData) {
     const storyEl = document.getElementById("story");
 
@@ -59,32 +83,23 @@ function handleCooldownUpdate(nextGameStartUtcTime) {
     submitBtn.hidden = true;
 }
 
-function handleTimerUpdate(gameStartUtcTime, gameEndUtcTime) {
+function handleGameTimerUpdate(gameEndUtcTime) {
+    const utcTimestamp = gameEndUtcTime < 1e12 ? gameEndUtcTime * 1000 : gameEndUtcTime;
     const timerEl = document.getElementById("game-timer");
-    const candidates = document.getElementById("candidate-list-section");
-    const candidateInput = document.getElementById("candidate-input-section");
-    const submitBtn = document.getElementById("submit-btn");
-    const cooldown = document.getElementById("cooldown");
 
-    const now = new Date().getTime();
-    const secondsLeft = gameEndUtcTime - (now / 1000);
-
-    timerEl.textContent = `⏳ ${secondsLeft} s.`;
-    cooldown.hidden = true;
-    candidates.hidden = false;
-    candidateInput.hidden = false;
-    submitBtn.hidden = false;
+    const interval = setInterval(updateTimer, 200);
+    timerEl.textContent = updateTimer(utcTimestamp, interval);
 }
 
 function handleGameStateUpdate(gameState) {
-    switch (gameState.game_status) {
+    switch (gameState["game_status"]) {
         case "COOLDOWN":
-            handleCooldownUpdate(gameState.next_game_start_utc_time);
+            handleCooldownUpdate(gameState["next_game_start_utc_time"]);
             break;
         case "IN_PLAY":
-            handleTimerUpdate(gameState.game_start_utc_time, gameState.game_end_utc_time);
-            handleStoryUpdate(gameState.story);
-            handleCandidateListUpdate(gameState.candidates);
+            handleGameTimerUpdate(gameState["game_end_utc_time"]);
+            handleStoryUpdate(gameState["story"]);
+            handleCandidateListUpdate(gameState["candidates"]);
             break;
     }
 }
@@ -92,6 +107,22 @@ function handleGameStateUpdate(gameState) {
 document.addEventListener("DOMContentLoaded", () => {
     console.log("Content loaded");
 
+    // First, set up SSE connection to follow live updates
+    const source = new EventSource("/events");
+    source.addEventListener("game_start", (e) => {
+        console.log("game started!");
+        handleGameStartEvent(JSON.parse(e.data));
+    });
+    source.addEventListener("game_end", (e) => {
+        console.log("game ended!");
+        // handleCooldownUpdate(JSON.parse(e.data));
+    });
+    source.addEventListener("game_state", (e) => {
+        console.log("game state sent!");
+        handleGameStateUpdate(JSON.parse(e.data));
+    });
+
+    // Make site interactive
     const candidateInput = document.getElementById("candidate-input");
     const submitBtn = document.getElementById("submit-btn");
     submitBtn.onclick = (e) => {
@@ -116,50 +147,5 @@ document.addEventListener("DOMContentLoaded", () => {
                 })
                 .catch((error) => console.error(error));
         }
-    };
-
-    // Set up SSE connection
-    const source = new EventSource("/events");
-    source.onmessage = (e) => {
-        const data = JSON.parse(e.data);
-        // const data = {
-        //     "game_start_utc_time":"1744151834.322104",
-        //     "game_end_utc_time":"1744151855.322104",
-        //     "next_game_start_utc_time": "1744151865.322104",
-        //     "game_status":"IN_PLAY",
-        //     "story":[
-        //         {
-        //             "word":"The",
-        //             "flags":0
-        //         },
-        //         {
-        //             "word":"story",
-        //             "flags":0
-        //         },
-        //         {
-        //             "word":"starts",
-        //             "flags":1
-        //         }
-        //     ],
-        //     "candidates":[
-        //         {
-        //             "phrase":"with a very short",
-        //             "votes":1
-        //         },
-        //         {
-        //             "phrase":"on a dark and stormy",
-        //             "votes":1
-        //         },
-        //         {
-        //             "phrase":"off on a",
-        //             "votes":1
-        //         },
-        //         {
-        //             "phrase":"to sound like",
-        //             "votes":1
-        //         }
-        //     ]
-        // };
-        handleGameStateUpdate(data);
     };
 });
