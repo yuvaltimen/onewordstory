@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import asyncio
@@ -47,9 +48,13 @@ async def sse_events():
 
     async def event_generator():
         try:
+            print("sending inital state")
             # Give the client the live game state
             initial_game_state = await zg.get_game_state()
-            yield ServerSentEvent(event="game_state", data=json.dumps(initial_game_state))
+            yield ServerSentEvent(event="game_state", data=json.dumps({
+                "server_time": datetime.datetime.now().timestamp(),
+                **initial_game_state
+            }))
 
             # Now stream updates
             async for message in pubsub.listen():
@@ -58,7 +63,10 @@ async def sse_events():
                     # Ignore Redis internal messages like "subscribe" or "unsubscribe"
                     continue
                 event_type = message["channel"].split(":")[-1]
-                yield ServerSentEvent(event=event_type, data=message['data'])
+                yield ServerSentEvent(event=event_type, data=json.dumps({
+                    "server_time": datetime.datetime.now().timestamp(),
+                    **json.loads(message['data'])
+                }))
         finally:
             await pubsub.punsubscribe(f"{GAME_EVENTS_CHANNEL_PREFIX}:*")
             await pubsub.close()

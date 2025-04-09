@@ -1,29 +1,24 @@
 
 function handleGameStartEvent(event) {
-    handleGameTimerUpdate(event["game_end_utc_time"]);
-}
+    // First hide cooldown specific stuff
+    const cooldown = document.getElementById("cooldown");
+    cooldown.hidden = true;
 
-function updateTimer(utcTimestamp, interval) {
-    const now = Date.now();
-    const diffMs = utcTimestamp - now;
+    // Show game-specific stuff
+    const gameTimer = document.getElementById("top-bar");
+    const candidates = document.getElementById("candidate-list-section");
+    const candidateInput = document.getElementById("candidate-input-section");
+    const submitBtn = document.getElementById("submit-btn");
+    candidates.hidden = false;
+    candidateInput.hidden = false;
+    submitBtn.hidden = false;
+    gameTimer.hidden = false
 
-    if (diffMs <= 0) {
-        clearInterval(interval);
-        return "Time's up!";
-    }
-
-    const seconds = Math.floor((diffMs / 1000) % 60);
-    const minutes = Math.floor((diffMs / (1000 * 60)) % 60);
-    const parts = [
-        minutes > 0 ? `${minutes}m` : '',
-        `${seconds}s`
-    ].filter(Boolean);
-
-    return parts.join(' ');
+    startCountdown(event["game_end_utc_time"], event["server_time"], "game-timer");
 }
 
 
-function handleStoryUpdate(storyData) {
+function setStoryData(storyData) {
     const storyEl = document.getElementById("story");
 
     const wordListHtml = storyData.map((wordItem) => {
@@ -39,7 +34,7 @@ function handleStoryUpdate(storyData) {
 }
 
 
-function handleCandidateListUpdate(candidateData) {
+function setCandidateListData(candidateData) {
     const candidateListEl = document.getElementById("candidate-list");
 
     const candidateListHtml = candidateData.map((candidateItem) => {
@@ -59,68 +54,66 @@ function handleCandidateListUpdate(candidateData) {
 }
 
 
-function handleCooldownUpdate(nextGameStartUtcTime) {
+function handleCooldownUpdate(event) {
 
-    const now = new Date().getTime();
-    const secondsLeft = nextGameStartUtcTime - (now / 1000);
-    console.log("Cooling off: " + nextGameStartUtcTime);
-    console.log("Cooling off: " + secondsLeft);
-
-
-    const timerEl = document.getElementById("game-timer");
-    const cooldownTimerEl = document.getElementById("cooldown-timer");
+    // First hide game-specific stuff
+    const gameTimer = document.getElementById("top-bar");
     const candidates = document.getElementById("candidate-list-section");
     const candidateInput = document.getElementById("candidate-input-section");
     const submitBtn = document.getElementById("submit-btn");
-    const cooldown = document.getElementById("cooldown");
-
-
-    cooldown.hidden = false;
-    timerEl.textContent = "Done!";
-    cooldownTimerEl.textContent = `${secondsLeft}`;
     candidates.hidden = true;
     candidateInput.hidden = true;
     submitBtn.hidden = true;
-}
+    gameTimer.hidden = true
 
-function handleGameTimerUpdate(gameEndUtcTime) {
-    const utcTimestamp = gameEndUtcTime < 1e12 ? gameEndUtcTime * 1000 : gameEndUtcTime;
-    const timerEl = document.getElementById("game-timer");
+    // Show cooldown specific stuff
+    const cooldown = document.getElementById("cooldown");
+    cooldown.hidden = false;
 
-    const interval = setInterval(updateTimer, 200);
-    timerEl.textContent = updateTimer(utcTimestamp, interval);
+    startCountdown(event["next_game_start_utc_time"], event["server_time"],"cooldown-timer");
 }
 
 function handleGameStateUpdate(gameState) {
     switch (gameState["game_status"]) {
+        case "ERROR":
+            alert("ERROR: check sse data...")
+            break;
         case "COOLDOWN":
-            handleCooldownUpdate(gameState["next_game_start_utc_time"]);
+            handleCooldownUpdate(gameState);
+            setStoryData([]);
+            setCandidateListData([]);
             break;
         case "IN_PLAY":
-            handleGameTimerUpdate(gameState["game_end_utc_time"]);
-            handleStoryUpdate(gameState["story"]);
-            handleCandidateListUpdate(gameState["candidates"]);
+            handleGameStartEvent(gameState["game_end_utc_time"]);
+            setStoryData(gameState["story"]);
+            setCandidateListData(gameState["candidates"]);
             break;
     }
 }
+
 
 document.addEventListener("DOMContentLoaded", () => {
     console.log("Content loaded");
 
     // First, set up SSE connection to follow live updates
     const source = new EventSource("/events");
+    source.addEventListener("game_state", (e) => {
+        console.log("game state sent!");
+        console.log(JSON.parse(e.data));
+        handleGameStateUpdate(JSON.parse(e.data));
+    });
     source.addEventListener("game_start", (e) => {
         console.log("game started!");
         handleGameStartEvent(JSON.parse(e.data));
     });
     source.addEventListener("game_end", (e) => {
         console.log("game ended!");
-        // handleCooldownUpdate(JSON.parse(e.data));
+        handleCooldownUpdate(JSON.parse(e.data));
+        setStoryData([]);
+        setCandidateListData([]);
     });
-    source.addEventListener("game_state", (e) => {
-        console.log("game state sent!");
-        handleGameStateUpdate(JSON.parse(e.data));
-    });
+
+
 
     // Make site interactive
     const candidateInput = document.getElementById("candidate-input");
@@ -131,21 +124,60 @@ document.addEventListener("DOMContentLoaded", () => {
         if (value) {
             const headers = new Headers();
             headers.append("Content-Type", "application/json");
-            // validateCandidatePhrase(value);
             fetch("http://localhost:8080/submit_candidate", {
                 method: "POST",
                 headers: headers,
                 body: JSON.stringify({
                     "phrase": value
                 }),
-                redirect: "follow"
-            }).then((response) => response.json())
-                .then((result) => {
-                    console.log(result);
-                    candidateInput.textContent = "";
-                    handleGameStateUpdate(result);
-                })
-                .catch((error) => console.error(error));
+            }).then((response) => response.json()).then((result) => {
+                console.log(result);
+                candidateInput.value = "";
+            }, (error) => console.log(error));
         }
     };
 });
+
+/// ==================== CHATGPT ======
+
+function startCountdown(utcTimestamp, serverTimestamp, elementId) {
+    // Convert timestamp to milliseconds if it looks like seconds
+    if (utcTimestamp < 1e12) {
+        utcTimestamp *= 1000;
+    }
+
+    if (serverTimestamp < 1e12) {
+        // TODO use this
+        serverTimestamp *= 1000;
+    }
+
+    const timerElement = document.getElementById(elementId);
+
+    function updateTimer() {
+        const now = Date.now();
+        const diffMs = utcTimestamp - now;
+
+        if (diffMs <= 0) {
+            timerElement.textContent = "Time's up!";
+            clearInterval(interval);
+            return;
+        }
+
+        const seconds = Math.floor((diffMs / 1000) % 60);
+        const minutes = Math.floor((diffMs / (1000 * 60)) % 60);
+        const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        const parts = [
+            days > 0 ? `${days}d` : '',
+            hours > 0 ? `${hours}h` : '',
+            minutes > 0 ? `${minutes}m` : '',
+            `${seconds}s`
+        ].filter(Boolean);
+
+        timerElement.textContent = parts.join(' ');
+    }
+
+    updateTimer(); // Show immediately
+    const interval = setInterval(updateTimer, 1000);
+}

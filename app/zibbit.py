@@ -97,9 +97,9 @@ EVENT_STORY_UPDATE_CHANNEL = "story_update"
 EVENT_WORD_FLAG_CHANNEL = "word_flag"
 
 # Length of a game
-GAME_LENGTH_SECONDS = 20
+GAME_LENGTH_SECONDS = 5
 # Length of cooldown between games
-GAME_COOLDOWN_SECONDS = 10
+GAME_COOLDOWN_SECONDS = 5
 # TTL for candidate
 CANDIDATE_DECAY_SECONDS = 10
 # TTL for restriction on submitting the same phrase again
@@ -164,7 +164,7 @@ class ZibbitGame:
     async def handle_start_game(self) -> None:
         # Handle clearing previous game state data from Redis
         await self.clear_redis()
-        await self.redis.setex(GAME_STATUS_KEY, GAME_LENGTH_SECONDS, "IN_PLAY")
+        await self.redis.set(GAME_STATUS_KEY, "IN_PLAY")
 
         # Set the game state data to a new game
         now = datetime.datetime.now(datetime.UTC)
@@ -180,13 +180,13 @@ class ZibbitGame:
 
 
     async def handle_end_game(self) -> None:
-        await self.redis.setex(GAME_STATUS_KEY, GAME_COOLDOWN_SECONDS, "COOLDOWN")
+        await self.redis.set(GAME_STATUS_KEY, "COOLDOWN")
         now = datetime.datetime.now(datetime.UTC)
         self.next_game_start_utc_time = (now + datetime.timedelta(seconds=GAME_COOLDOWN_SECONDS)).timestamp()
         self.game_start_utc_time = None
         self.game_end_utc_time = None
 
-        await self.publish_event(EVENT_GAME_START_CHANNEL, {
+        await self.publish_event(EVENT_GAME_END_CHANNEL, {
             GAME_STATUS_KEY: "COOLDOWN",
             "next_game_start_utc_time": self.next_game_start_utc_time
         })
