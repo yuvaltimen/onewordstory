@@ -36,6 +36,10 @@ app.add_middleware(
 )
 
 
+def get_client_ip(req: Request):
+    return req.client.host
+
+
 @app.get('/events')
 async def sse_events():
     pubsub = zg.pubsub()
@@ -63,7 +67,8 @@ async def sse_events():
 
 @app.post('/submit_candidate')
 async def submit_candidate(request: Request):
-    print("requested /submit_candidate")
+    client_ip = get_client_ip(request)
+    print(f"{client_ip} -> /submit_candidate")
     request_data = await request.json()
     phrase = request_data["phrase"]
     if await zg.handle_phrase_submission(phrase):
@@ -75,7 +80,8 @@ async def submit_candidate(request: Request):
 
 @app.post('/vote')
 async def vote(request: Request):
-    print("requested /vote")
+    client_ip = get_client_ip(request)
+    print(f"{client_ip} -> /vote")
     request_data = await request.json()
     candidate = request_data["candidate"]
     if not candidate:
@@ -87,7 +93,8 @@ async def vote(request: Request):
 
 @app.post('/flag_word')
 async def submit_word_flag(request: Request):
-    print("requested /flag_word")
+    client_ip = get_client_ip(request)
+    print(f"{client_ip} -> /flag_word")
     request_data = await request.json()
     word = request_data["word"]
     if await zg.handle_word_flag(word):

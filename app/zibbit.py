@@ -7,15 +7,17 @@ import redis.asyncio as redis
 Zibbit is a consensus-building game. 
 It's implemented as a wrapper around Redis.
 
-- Word phrases are proposed on a continuous basis. Max of 8 candidates allowed at once. 
+- Word phrases are proposed on a continuous basis. (Max of 8 candidates allowed at once.) 
 - Each proposal begins to "decay" for 10 seconds.
 - If players vote for a proposal, it pauses the decay by num_votes.
     - Ie. the first vote pauses for 1 second, the third vote for 3 seconds...
-- A candidate phrase that decays to 0 gets removed from consideration. 
+- A candidate phrase that decays to 0 gets removed from consideration.
 - After a candidate phrase is proposed, it's put in a "cooldown" period of 20 seconds where it can't be proposed again.
 - If a candidate phrase gets 2+ votes, it gets added to the story.
+- If a user taps a phrase they voted for already, it 'unvotes' for it.
 - Words can be flagged on a continuous basis.
-    - If 2+ players flag the same word, it gets sliced out.  
+    - If 2+ players flag the same word, it gets sliced out.
+- If a user taps a word they flagged, it 'un-flags' it.
 
 Game timer is set to 2 minutes. At the end, there's a 1 minute cooldown timer. 
 
