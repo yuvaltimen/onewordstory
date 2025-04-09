@@ -22,8 +22,9 @@ Game timer is set to 2 minutes. At the end, there's a 1 minute cooldown timer.
 
 Game state looks like:
 {
-    "game_start_utc_time": "2025-04-07T18:52:00Z",
-    "game_start_end_time": "2025-04-07T18:54:00Z",
+    "game_start_utc_time": <timestamp>,
+    "game_end_utc_time": <timestamp>,
+    "next_game_start_utc_time": <timestamp>,
     "game_status": "IN_PLAY",
     "story": [
         {
@@ -42,19 +43,23 @@ Game state looks like:
     "candidates": [
         {
             "phrase": "with a very short",
-            "votes": 1
+            "votes": 1,
+            "expiration_utc_time": <timestamp>
         },
         {
             "phrase": "on a dark and stormy",
-            "votes": 1
+            "votes": 1,
+            "expiration_utc_time": <timestamp>
         },
         {
             "phrase": "off on a",
-            "votes": 1
+            "votes": 1,
+            "expiration_utc_time": <timestamp>
         },
         {
             "phrase": "to sound like",
-            "votes": 1
+            "votes": 1,
+            "expiration_utc_time": <timestamp>
         }
     ]
 }
@@ -144,7 +149,8 @@ class ZibbitGame:
             } for idx, word in enumerate(story)],
             "candidates": [{
                 "phrase": candidate,
-                "votes": candidate_votes[idx] or 0
+                "votes": candidate_votes[idx] or 0,
+                "expiration_utc_time": await self.redis.ttl(candidate)
             } for idx, candidate  in enumerate(candidates)],
             "game_status": game_status,
             "game_start_utc_time": self.game_start_utc_time,
