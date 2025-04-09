@@ -26,15 +26,11 @@
     <main class="main">
         <section id="story-section">
             <div id="story">
-                <span class="story-word" data-word="the">The</span>
-                <span class="story-word" data-word="quick">quick</span>
-                <span class="story-word" data-word="brown">brown</span>
-                <span class="story-word" data-word="fox">fox</span>
             </div>
-            <div id="cooldown" class="cooldown hidden">Cooling down... Please wait.</div>
+            <div id="cooldown" class="cooldown">Next game starting in <span id="cooldown-timer"></span> sec...</div>
         </section>
 
-        <section id="candidate-section">
+        <section id="candidate-input-section">
             <div class="candidate-submission">
                 <form id="candidateForm" method="POST">
                     <input type="text" id="candidate-input" placeholder="Suggest next phrase..." required/>
@@ -42,27 +38,9 @@
                 </form>
             </div>
 
-            <div class="candidates">
+            <div class="candidates" id="candidate-list-section">
                 <h2>Vote on the next phrase:</h2>
                 <ul id="candidate-list">
-                    <li data-phrase="jumped over the lazy">
-                        <button class="vote-btn">
-                            <span class="phrase-text">jumped over the lazy</span>
-                            <span class="vote-count">0</span>
-                        </button>
-                    </li>
-                    <li data-phrase="ran through the mud">
-                        <button class="vote-btn">
-                            <span class="phrase-text">ran through the mud</span>
-                            <span class="vote-count">0</span>
-                        </button>
-                    </li>
-                    <li data-phrase="didn't give a shit">
-                        <button class="vote-btn">
-                            <span class="phrase-text">didn't give a shit</span>
-                            <span class="vote-count">0</span>
-                        </button>
-                    </li>
                 </ul>
             </div>
         </section>

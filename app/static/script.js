@@ -36,29 +36,50 @@ function handleCandidateListUpdate(candidateData) {
 
 
 function handleCooldownUpdate(nextGameStartUtcTime) {
+
+    const now = new Date().getTime();
+    const secondsLeft = nextGameStartUtcTime - (now / 1000);
     console.log("Cooling off: " + nextGameStartUtcTime);
-    // const timerEl = document.getElementById("game-timer");
-    // const candidateInput = document.getElementById("candidate-input");
-    // const submitBtn = document.getElementById("submit-btn");
-    //
-    // timerEl.textContent = "Done!";
-    // candidateInput.disabled = true;
-    // submitBtn.disabled = true;
+    console.log("Cooling off: " + secondsLeft);
+
+
+    const timerEl = document.getElementById("game-timer");
+    const cooldownTimerEl = document.getElementById("cooldown-timer");
+    const candidates = document.getElementById("candidate-list-section");
+    const candidateInput = document.getElementById("candidate-input-section");
+    const submitBtn = document.getElementById("submit-btn");
+    const cooldown = document.getElementById("cooldown");
+
+
+    cooldown.hidden = false;
+    timerEl.textContent = "Done!";
+    cooldownTimerEl.textContent = `${secondsLeft}`;
+    candidates.hidden = true;
+    candidateInput.hidden = true;
+    submitBtn.hidden = true;
 }
 
 function handleTimerUpdate(gameStartUtcTime, gameEndUtcTime) {
     const timerEl = document.getElementById("game-timer");
+    const candidates = document.getElementById("candidate-list-section");
+    const candidateInput = document.getElementById("candidate-input-section");
+    const submitBtn = document.getElementById("submit-btn");
+    const cooldown = document.getElementById("cooldown");
 
     const now = new Date().getTime();
-    const secondsLeft = (gameEndUtcTime - now) / 1000;
+    const secondsLeft = gameEndUtcTime - (now / 1000);
 
     timerEl.textContent = `⏳ ${secondsLeft} s.`;
+    cooldown.hidden = true;
+    candidates.hidden = false;
+    candidateInput.hidden = false;
+    submitBtn.hidden = false;
 }
 
 function handleGameStateUpdate(gameState) {
     switch (gameState.game_status) {
         case "COOLDOWN":
-            handleCooldownUpdate();
+            handleCooldownUpdate(gameState.next_game_start_utc_time);
             break;
         case "IN_PLAY":
             handleTimerUpdate(gameState.game_start_utc_time, gameState.game_end_utc_time);
@@ -90,7 +111,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }).then((response) => response.json())
                 .then((result) => {
                     console.log(result);
-                    handleGameStateUpdate(JSON.parse(result));
+                    candidateInput.textContent = "";
+                    handleGameStateUpdate(result);
                 })
                 .catch((error) => console.error(error));
         }
@@ -99,10 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Set up SSE connection
     const source = new EventSource("/events");
     source.onmessage = (e) => {
-
         const data = JSON.parse(e.data);
-        console.log(data);
-
         // const data = {
         //     "game_start_utc_time":"1744151834.322104",
         //     "game_end_utc_time":"1744151855.322104",

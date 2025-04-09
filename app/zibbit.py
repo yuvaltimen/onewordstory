@@ -125,7 +125,7 @@ class ZibbitGame:
                 await asyncio.sleep(1)
 
     async def broadcast_game_state(self):
-        await self.redis.publish(GAME_EVENTS_CHANNEL, await self.get_game_state())
+        await self.redis.publish(GAME_EVENTS_CHANNEL, json.dumps(await self.get_game_state()))
 
     async def get_game_state(self):
         story = await self.redis.get(STORY_KEY) or []
@@ -134,7 +134,7 @@ class ZibbitGame:
         candidate_votes = await self.redis.mget(candidates)
         game_status = await self.redis.get(GAME_STATUS_KEY) or "ERROR"
 
-        return json.dumps({
+        return {
             "story": [{
                 "word": word,
                 "flags": word_flags[idx] or 0
@@ -147,7 +147,7 @@ class ZibbitGame:
             "game_start_utc_time": self.game_start_utc_time,
             "game_end_utc_time": self.game_end_utc_time,
             "next_game_start_utc_time": self.next_game_start_utc_time
-        })
+        }
 
     async def handle_start_game(self) -> None:
         # Handle clearing previous game state data from Redis
@@ -164,6 +164,9 @@ class ZibbitGame:
 
     async def handle_end_game(self) -> None:
         await self.redis.set(GAME_STATUS_KEY, "COOLDOWN")
+        now = datetime.datetime.now(datetime.UTC)
+        self.next_game_start_utc_time = (now + datetime.timedelta(seconds=GAME_COOLDOWN_SECONDS)).timestamp()
+
         await self.broadcast_game_state()
 
 
