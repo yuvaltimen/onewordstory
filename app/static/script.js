@@ -13,6 +13,7 @@ function handleGameStartEvent(event) {
     candidateInput.hidden = false;
     submitBtn.hidden = false;
     gameTimer.hidden = false
+    candidateInput.value = "";
 
     startCountdown(event["game_end_utc_time"], event["server_time"], "game-timer");
 }
@@ -65,6 +66,7 @@ function handleCooldownUpdate(event) {
     candidateInput.hidden = true;
     submitBtn.hidden = true;
     gameTimer.hidden = true
+    candidateInput.value = "";
 
     // Show cooldown specific stuff
     const cooldown = document.getElementById("cooldown");
@@ -87,6 +89,9 @@ function handleGameStateUpdate(gameState) {
             handleGameStartEvent(gameState["game_end_utc_time"]);
             setStoryData(gameState["story"]);
             setCandidateListData(gameState["candidates"]);
+            break;
+        default:
+            alert("UNKNOWN: check sse data...")
             break;
     }
 }
@@ -165,12 +170,8 @@ function startCountdown(utcTimestamp, serverTimestamp, elementId) {
 
         const seconds = Math.floor((diffMs / 1000) % 60);
         const minutes = Math.floor((diffMs / (1000 * 60)) % 60);
-        const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
-        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
         const parts = [
-            days > 0 ? `${days}d` : '',
-            hours > 0 ? `${hours}h` : '',
             minutes > 0 ? `${minutes}m` : '',
             `${seconds}s`
         ].filter(Boolean);
