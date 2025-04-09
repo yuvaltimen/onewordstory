@@ -1,3 +1,4 @@
+import json
 import os
 import asyncio
 from contextlib import asynccontextmanager
@@ -8,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
-from zibbit import ZibbitGame, GAME_EVENTS_CHANNEL
+from zibbit import ZibbitGame, GAME_EVENTS_CHANNEL_PREFIX
 
 REDIS_HOST = "yuvaltimen.xyz"  #os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = 6379
@@ -38,15 +39,23 @@ app.add_middleware(
 @app.get('/events')
 async def sse_events():
     pubsub = zg.pubsub()
-    await pubsub.subscribe(GAME_EVENTS_CHANNEL)
+    await pubsub.psubscribe(f"{GAME_EVENTS_CHANNEL_PREFIX}:*")
 
     async def event_generator():
         try:
+            # Give the client the live game state
+            initial_game_state = await zg.get_game_state()
+            yield f"event: game_state\ndata: {json.dumps(initial_game_state)}\n\n"
+
+            # Now stream updates
             async for message in pubsub.listen():
-                if message["type"] == "message":
-                    yield message['data']
+                if message["type"] != "pmessage":
+                    # Ignore Redis internal messages like "subscribe" or "unsubscribe"
+                    continue
+                event_type = message["channel"].split(":")[-1]
+                yield f"event: {event_type}\ndata {message['data']}\n\n"
         finally:
-            await pubsub.unsubscribe(GAME_EVENTS_CHANNEL)
+            await pubsub.punsubscribe(f"{GAME_EVENTS_CHANNEL_PREFIX}:*")
             await pubsub.close()
 
     return EventSourceResponse(event_generator())

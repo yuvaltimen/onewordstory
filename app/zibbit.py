@@ -76,11 +76,18 @@ CANDIDATES_KEY_PREFIX = "candidates"
 USER_RATE_LIMIT_PREFIX = "user"
 # Stores the game ttl
 GAME_TTL_KEY = "game_ttl"
-# Denotes the channel to subscribe to for game updates
-GAME_EVENTS_CHANNEL = "game_events"
 # Prefix for storing story words to flag counter
 STORY_FLAG_KEY_PREFIX = "story_flag"
 
+# Denotes the channel prefix to subscribe to for game updates
+GAME_EVENTS_CHANNEL_PREFIX = "game_events"
+# Channels that store pub/sub for game events
+EVENT_GAME_START_CHANNEL = "game_start"
+EVENT_GAME_END_CHANNEL = "game_end"
+EVENT_CANDIDATE_UPDATE_CHANNEL = "candidate_update"
+EVENT_CANDIDATE_VOTE_CHANNEL = "candidate_vote"
+EVENT_STORY_UPDATE_CHANNEL = "story_update"
+EVENT_WORD_FLAG_CHANNEL = "word_flag"
 
 # Length of a game
 GAME_LENGTH_SECONDS = 20
@@ -101,31 +108,27 @@ class ZibbitGame:
         self.next_game_start_utc_time = None
         self.redis = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
 
+
     def pubsub(self):
         return self.redis.pubsub()
+
 
     async def timer_loop(self):
         while True:
             # On server startup, the first phase should be cooldown
             await self.handle_end_game()
             # Start the cooldown timer
-            for i in range(GAME_COOLDOWN_SECONDS, 0, -1):
-                await self.redis.set(GAME_COOLDOWN_TIMER_SECONDS, i)
-                # Each cooldown step, broadcast the state to the clients
-                await self.broadcast_game_state()
-                await asyncio.sleep(1)
+            await asyncio.sleep(GAME_COOLDOWN_SECONDS)
 
             # Call the function to set start game data
             await self.handle_start_game()
-            # Start game timer, n
-            for i in range(GAME_LENGTH_SECONDS, 0, -1):
-                await self.redis.set(GAME_IN_PLAY_TIMER_SECONDS, i)
-                # Each game step, broadcast the state to the clients
-                await self.broadcast_game_state()
-                await asyncio.sleep(1)
+            # Start the game timer
+            await asyncio.sleep(GAME_LENGTH_SECONDS)
 
-    async def broadcast_game_state(self):
-        await self.redis.publish(GAME_EVENTS_CHANNEL, json.dumps(await self.get_game_state()))
+
+    async def publish_event(self, event_type: str, payload: dict) -> None:
+        await self.redis.publish(f"{GAME_EVENTS_CHANNEL_PREFIX}:{event_type}", json.dumps(payload))
+
 
     async def get_game_state(self):
         story = await self.redis.get(STORY_KEY) or []
@@ -149,40 +152,51 @@ class ZibbitGame:
             "next_game_start_utc_time": self.next_game_start_utc_time
         }
 
+
     async def handle_start_game(self) -> None:
         # Handle clearing previous game state data from Redis
         await self.clear_redis()
+        await self.redis.setex(GAME_STATUS_KEY, GAME_LENGTH_SECONDS, "IN_PLAY")
 
         # Set the game state data to a new game
         now = datetime.datetime.now(datetime.UTC)
         self.game_start_utc_time = now.timestamp()
         self.game_end_utc_time = (now + datetime.timedelta(seconds=GAME_LENGTH_SECONDS)).timestamp()
-        self.next_game_start_utc_time = (now + datetime.timedelta(seconds=GAME_LENGTH_SECONDS + GAME_COOLDOWN_SECONDS)).timestamp()
-        await self.redis.set(GAME_STATUS_KEY, "IN_PLAY")
+        self.next_game_start_utc_time = None
 
-        await self.broadcast_game_state()
+        await self.publish_event(EVENT_GAME_START_CHANNEL, {
+            GAME_STATUS_KEY: "IN_PLAY",
+            "game_start_utc_time": self.game_start_utc_time,
+            "game_end_utc_time": self.game_end_utc_time
+        })
+
 
     async def handle_end_game(self) -> None:
-        await self.redis.set(GAME_STATUS_KEY, "COOLDOWN")
+        await self.redis.setex(GAME_STATUS_KEY, GAME_COOLDOWN_SECONDS, "COOLDOWN")
         now = datetime.datetime.now(datetime.UTC)
         self.next_game_start_utc_time = (now + datetime.timedelta(seconds=GAME_COOLDOWN_SECONDS)).timestamp()
+        self.game_start_utc_time = None
+        self.game_end_utc_time = None
 
-        await self.broadcast_game_state()
+        await self.publish_event(EVENT_GAME_START_CHANNEL, {
+            GAME_STATUS_KEY: "COOLDOWN",
+            "next_game_start_utc_time": self.next_game_start_utc_time
+        })
 
 
     async def clear_redis(self) -> None:
         # Clear story
         await self.redis.delete(STORY_KEY)
         # Clear candidates
-        candidates = await self.redis.keys(CANDIDATES_KEY_PREFIX)
+        candidates = await self.redis.keys(f"{CANDIDATES_KEY_PREFIX}:*")
         if candidates:
             await self.redis.delete(*candidates)
         # Clear candidates cooldown set
-        candidates_cooldown = await self.redis.keys(COOLDOWN_PHRASES_KEY_PREFIX)
+        candidates_cooldown = await self.redis.keys(f"{COOLDOWN_PHRASES_KEY_PREFIX}:*")
         if candidates_cooldown:
             await self.redis.delete(*candidates_cooldown)
         # Clear word flags
-        word_flags = await self.redis.keys(STORY_FLAG_KEY_PREFIX)
+        word_flags = await self.redis.keys(f"{STORY_FLAG_KEY_PREFIX}:*")
         if word_flags:
             await self.redis.delete(*word_flags)
 
@@ -196,8 +210,16 @@ class ZibbitGame:
             candidate_key = f"{CANDIDATES_KEY_PREFIX}:{phrase}"
             await self.redis.setex(candidate_key, CANDIDATE_DECAY_SECONDS, 0)
             await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
-            await self.broadcast_game_state()
+            await self.publish_event(EVENT_CANDIDATE_UPDATE_CHANNEL, {
+                "phrase": phrase,
+                "votes": 0,
+                "expiration_utc_time": (
+                        datetime.datetime.now()
+                        + datetime.timedelta(seconds=CANDIDATE_DECAY_SECONDS)
+                ).timestamp()
+            })
             return True
+
 
     async def handle_vote(self, candidate: str) -> bool:
         # Check if phrase is actually a candidate
@@ -206,12 +228,24 @@ class ZibbitGame:
         if candidate_num_votes:
             remaining_ttl = await self.redis.ttl(candidate_key)
             cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{candidate}"
-            await self.redis.setex(candidate_key, remaining_ttl + (candidate_num_votes + 1), candidate_num_votes + 1)
+            updated_num_votes = candidate_num_votes + 1
+            # Votes keep the candidate alive for longer
+            updated_ttl = remaining_ttl + updated_num_votes
+            await self.redis.setex(candidate_key, updated_ttl, updated_num_votes)
+            # Since the candidate is being kept alive for longer, it should also have its cooldown time reset
             await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
-            await self.broadcast_game_state()
+            await self.publish_event(EVENT_CANDIDATE_VOTE_CHANNEL, {
+                "candidate": candidate,
+                "votes": updated_num_votes,
+                "expiration_utc_time": (
+                    datetime.datetime.now()
+                    + datetime.timedelta(seconds=updated_ttl)
+                ).timestamp()
+            })
             return True
         else:
             return False
+
 
     async def handle_word_flag(self, word: str) -> bool:
         # Check if word has already been flagged
@@ -222,10 +256,17 @@ class ZibbitGame:
         word_flags_counter = await self.redis.get(word_flag_key)
         if word_flags_counter:
             # Remove the word from the story
+            # TODO: Make words id-based, right now this filters out all identical words
             new_story = filter(lambda x: x.decode("utf-8") != word, story)
             await self.redis.delete(STORY_KEY, word_flag_key)
             await self.redis.rpush(STORY_KEY, *new_story)
+            await self.publish_event(EVENT_STORY_UPDATE_CHANNEL, {
+                "story": new_story
+            })
         else:
-            await self.redis.incr(word_flag_key)
-        await self.broadcast_game_state()
+            num_flags = await self.redis.incr(word_flag_key)
+            await self.publish_event(EVENT_WORD_FLAG_CHANNEL, {
+                "word": word,
+                "flags": num_flags
+            })
         return True
