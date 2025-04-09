@@ -1,7 +1,5 @@
-import datetime
 import json
-import aioschedule as schedule
-
+import datetime
 import asyncio
 import redis.asyncio as redis
 
@@ -85,9 +83,9 @@ STORY_FLAG_KEY_PREFIX = "story_flag"
 
 
 # Length of a game
-GAME_LENGTH_SECONDS = 120
+GAME_LENGTH_SECONDS = 20
 # Length of cooldown between games
-GAME_COOLDOWN_SECONDS = 60
+GAME_COOLDOWN_SECONDS = 10
 # TTL for candidate
 CANDIDATE_DECAY_SECONDS = 10
 # TTL for restriction on submitting the same phrase again
@@ -100,6 +98,7 @@ class ZibbitGame:
         self.game_status = "COOLDOWN"
         self.game_start_utc_time = None
         self.game_end_utc_time = None
+        self.next_game_start_utc_time = None
         self.redis = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
 
     def pubsub(self):
@@ -130,14 +129,24 @@ class ZibbitGame:
 
     async def get_game_state(self):
         story = await self.redis.get(STORY_KEY) or []
+        word_flags = await self.redis.mget(story)
         candidates = await self.redis.keys(f"{CANDIDATES_KEY_PREFIX}:*")
+        candidate_votes = await self.redis.mget(candidates)
         game_status = await self.redis.get(GAME_STATUS_KEY) or "ERROR"
+
         return json.dumps({
-            "story": " ".join(story),
-            "candidates": candidates,
+            "story": [{
+                "word": word,
+                "flags": word_flags[idx] or 0
+            } for idx, word in enumerate(story)],
+            "candidates": [{
+                "phrase": candidate,
+                "votes": candidate_votes[idx] or 0
+            } for idx, candidate  in enumerate(candidates)],
             "game_status": game_status,
             "game_start_utc_time": self.game_start_utc_time,
-            "game_end_utc_time": self.game_end_utc_time
+            "game_end_utc_time": self.game_end_utc_time,
+            "next_game_start_utc_time": self.next_game_start_utc_time
         })
 
     async def handle_start_game(self) -> None:
@@ -146,14 +155,15 @@ class ZibbitGame:
 
         # Set the game state data to a new game
         now = datetime.datetime.now(datetime.UTC)
-        self.game_start_utc_time = now
-        self.game_end_utc_time = now + datetime.timedelta(seconds=GAME_LENGTH_SECONDS)
-        await self.redis.setex(GAME_STATUS_KEY, GAME_LENGTH_SECONDS, "IN_PLAY")
+        self.game_start_utc_time = now.timestamp()
+        self.game_end_utc_time = (now + datetime.timedelta(seconds=GAME_LENGTH_SECONDS)).timestamp()
+        self.next_game_start_utc_time = (now + datetime.timedelta(seconds=GAME_LENGTH_SECONDS + GAME_COOLDOWN_SECONDS)).timestamp()
+        await self.redis.set(GAME_STATUS_KEY, "IN_PLAY")
 
         await self.broadcast_game_state()
 
     async def handle_end_game(self) -> None:
-        await self.redis.setex(GAME_STATUS_KEY, GAME_COOLDOWN_SECONDS, "COOLDOWN")
+        await self.redis.set(GAME_STATUS_KEY, "COOLDOWN")
         await self.broadcast_game_state()
 
 
@@ -162,13 +172,16 @@ class ZibbitGame:
         await self.redis.delete(STORY_KEY)
         # Clear candidates
         candidates = await self.redis.keys(CANDIDATES_KEY_PREFIX)
-        await self.redis.delete(*candidates)
+        if candidates:
+            await self.redis.delete(*candidates)
         # Clear candidates cooldown set
         candidates_cooldown = await self.redis.keys(COOLDOWN_PHRASES_KEY_PREFIX)
-        await self.redis.delete(*candidates_cooldown)
+        if candidates_cooldown:
+            await self.redis.delete(*candidates_cooldown)
         # Clear word flags
         word_flags = await self.redis.keys(STORY_FLAG_KEY_PREFIX)
-        await self.redis.delete(*word_flags)
+        if word_flags:
+            await self.redis.delete(*word_flags)
 
 
     async def handle_phrase_submission(self, phrase: str) -> bool:
@@ -207,7 +220,7 @@ class ZibbitGame:
         if word_flags_counter:
             # Remove the word from the story
             new_story = filter(lambda x: x.decode("utf-8") != word, story)
-            await self.redis.delete(STORY_KEY)
+            await self.redis.delete(STORY_KEY, word_flag_key)
             await self.redis.rpush(STORY_KEY, *new_story)
         else:
             await self.redis.incr(word_flag_key)

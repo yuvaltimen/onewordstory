@@ -44,7 +44,7 @@ async def sse_events():
         try:
             async for message in pubsub.listen():
                 if message["type"] == "message":
-                    yield f"data: {message['data']}\n\n"
+                    yield message['data']
         finally:
             await pubsub.unsubscribe(GAME_EVENTS_CHANNEL)
             await pubsub.close()
@@ -57,8 +57,10 @@ async def submit_candidate(request: Request):
     request_data = await request.json()
     phrase = request_data["phrase"]
     if await zg.handle_phrase_submission(phrase):
-        return JSONResponse(status_code=200, content='Candidate submitted')
+        print("successful submit_candidate")
+        return JSONResponse(status_code=200, content=(await zg.get_game_state()))
     else:
+        print("failed submit_candidate")
         return JSONResponse(status_code=400, content='Unable to submit candidate')
 
 @app.post('/vote')
@@ -69,7 +71,7 @@ async def vote(request: Request):
     if not candidate:
         return 'Empty', 400
     if await zg.handle_vote(candidate):
-        return JSONResponse(status_code=200, content='Vote submitted')
+        return JSONResponse(status_code=200, content=(await zg.get_game_state()))
     else:
         return JSONResponse(status_code=400, content='Unable to submit vote')
 
@@ -79,7 +81,7 @@ async def submit_word_flag(request: Request):
     request_data = await request.json()
     word = request_data["word"]
     if await zg.handle_word_flag(word):
-        return JSONResponse(status_code=200, content='Flag submitted')
+        return JSONResponse(status_code=200, content=(await zg.get_game_state()))
     else:
         return JSONResponse(status_code=400, content='Unable to submit flag')
 
@@ -89,7 +91,7 @@ app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host="localhost",
         port=8080,
         log_level="debug",
         reload=True,
