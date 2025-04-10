@@ -97,7 +97,7 @@ EVENT_STORY_UPDATE_CHANNEL = "story_update"
 EVENT_WORD_FLAG_CHANNEL = "word_flag"
 
 # Length of a game
-GAME_LENGTH_SECONDS = 5
+GAME_LENGTH_SECONDS = 15
 # Length of cooldown between games
 GAME_COOLDOWN_SECONDS = 5
 # TTL for candidate

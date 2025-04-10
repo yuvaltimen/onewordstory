@@ -1,3 +1,8 @@
+:root {
+    --start-color: #4CAF50;  /* Green for full time */
+    --end-color: #F44336;    /* Red when time's almost up */
+}
+
 /* Reset & base styles */
 * {
     margin: 0;

@@ -16,7 +16,7 @@
     <div class="header">
         <div>
             <h1>Zibbit!</h1>
-            <div id="top-bar" class="top-bar">
+            <div hidden id="top-bar" class="top-bar">
                 ⏳ <span id="game-timer"></span>
             </div>
         </div>
@@ -27,18 +27,18 @@
         <section id="story-section">
             <div id="story">
             </div>
-            <div id="cooldown" class="cooldown">Next game starting in <span id="cooldown-timer"></span> sec...</div>
+            <div hidden id="cooldown" class="cooldown">Next game starting in <span id="cooldown-timer"></span> sec...</div>
         </section>
 
-        <section id="candidate-input-section">
+        <section hidden id="candidate-input-section">
             <div class="candidate-submission">
                 <form id="candidateForm" method="POST">
                     <input type="text" id="candidate-input" placeholder="Suggest next phrase..." required/>
-                    <button id="submit-btn">Submit</button>
+                    <button id="submit-btn" type="submit">Submit</button>
                 </form>
             </div>
 
-            <div class="candidates" id="candidate-list-section">
+            <div hidden class="candidates" id="candidate-list-section">
                 <h2>Vote on the next phrase:</h2>
                 <ul id="candidate-list">
                 </ul>
