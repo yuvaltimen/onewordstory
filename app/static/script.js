@@ -172,8 +172,8 @@ const ZibbitClient = (function () {
                 li.remove();
             }
 
-            millisRemaining -= 500;
-        }, 500);
+            millisRemaining -= 2000;
+        }, 2000);
     }
 
     function handleGameStateUpdate(gameState) {
@@ -213,7 +213,7 @@ const ZibbitClient = (function () {
             const diffMs = utcTimestamp - now;
 
             if (diffMs <= 0) {
-                timerElement.textContent = "Time's up!";
+                timerElement.textContent = "0s";
                 clearInterval(interval);
                 return;
             }
