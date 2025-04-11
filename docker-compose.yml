@@ -33,9 +33,8 @@ services:
       - "8080:8080"
     depends_on:
       - redis
-    environment:
-      - FLASK_APP=main.py
-      - FLASK_RUN_HOST=0.0.0.0
+    env_file:
+      - ".env"
 
   redis:
     image: redis:7-alpine

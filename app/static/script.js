@@ -21,12 +21,17 @@ function interpolateColor(color1, color2, factor) {
 
 
 const ZibbitClient = (function () {
+    const styles = getComputedStyle(document.documentElement);
+    const startColor = styles.getPropertyValue("--start-color").trim();
+    const endColor = styles.getPropertyValue("--end-color").trim();
+
     let eventSource = null;
     let isCooldown = false;
 
     const connectedUsers = {};
+    let renderInterval = null;
     const story = [];
-    const candidates = [];
+    let candidates = [];
 
     const $story = document.getElementById("story");
     const $cooldown = document.getElementById("cooldown");
@@ -117,82 +122,120 @@ const ZibbitClient = (function () {
         }).catch(err => console.error("Failed to submit vote", err))
     }
 
+    function getMillisRemaining(candidate) {
+        let expiration = candidate.expiration_utc_time;
+        if (expiration < 1e12) expiration *= 1000;
+        return expiration - Date.now();
+    }
+
     function handleAppendCandidate(candidateData) {
         candidates.push(candidateData);
-        renderCandidate(candidateData);
+        renderCandidates();
     }
 
     function handleCandidateVote(candidateVoteData) {
-        // if (!!candidateVoteData["expiration_utc_time"]) {
-        //     const candidateVotedFor = candidates.find((cand) => cand["candidateId"] === candidateVoteData["candidateId"]);
-        //
-        // }
-        // // The vote crossed the threshold, animate winning candidate and remove from list
-        // else {
-        //
-        // }
+        const expirationTime = candidateVoteData["expiration_utc_time"];
+        const votes = candidateVoteData["votes"];
+        const candidateId = candidateVoteData["candidate_id"];
+        if (!!expirationTime) {
+            // Update the candidate object
+            candidates.forEach(obj => {
+                if (obj.candidate_id === candidateId) {
+                    obj["expiration_utc_time"] = expirationTime;
+                    obj["votes"] = votes;
+                }
+            })
+        } else {
+            // The vote crossed the threshold, find winning candidate and remove from list
+            const idxOfVotedCandidate = candidates.findIndex((itm) => itm.candidate_id === candidateId);
+            candidates.splice(idxOfVotedCandidate, 1);
+
+            // Animate the winning element
+            const winningCandidate = document.getElementById(`candidate-${candidateId}`);
+            animateWinningCandidate(winningCandidate);
+        }
+
+        renderCandidates();
     }
 
-    function renderCandidate(candidateItem) {
-        const phrase = candidateItem["phrase"];
-        const votes = candidateItem["votes"];
-        const candidateId = candidateItem["candidate_id"];
-        let expirationTimestamp = candidateItem["expiration_utc_time"];
+    function animateWinningCandidate(el) {
+        el.style.backgroundColor = "blue";
+        setTimeout(() => {
+            el.style.backgroundColor = "";
+            el.remove();
+        }, 100)
+    }
 
-        if (expirationTimestamp < 1e12) {
-            expirationTimestamp *= 1000;
-        }
-        let millisRemaining = expirationTimestamp - Date.now();
 
-        if (millisRemaining <= 0) {
-            return;
-        }
 
-        // Create innermost elements
-        const phraseTextSpan = document.createElement("span");
-        const voteCountSpan = document.createElement("span");
-        phraseTextSpan.className = "phrase-text";
-        phraseTextSpan.textContent = phrase;
-        voteCountSpan.className = "vote-count";
-        voteCountSpan.textContent = votes;
+    function renderCandidates() {
+        $candidateList.childNodes.forEach((child) => child.remove());
+        $candidateList.innerHTML = "";
 
-        // Create intermediary element
-        const voteBtn = document.createElement("button");
-        voteBtn.dataset.candidateId = candidateId;
-        voteBtn.className = "vote-btn";
-        voteBtn.appendChild(phraseTextSpan);
-        voteBtn.appendChild(voteCountSpan);
+        candidates.forEach((candidateItem) => {
 
-        // Make button send a POST request to vote for this candidate
-        voteBtn.addEventListener("click", () => {
-            vote(voteBtn.dataset.candidateId);
+            const phrase = candidateItem["phrase"];
+            const votes = candidateItem["votes"];
+            const candidateId = candidateItem["candidate_id"];
+
+            // Create innermost elements
+            const phraseTextSpan = document.createElement("span");
+            const voteCountSpan = document.createElement("span");
+            phraseTextSpan.className = "phrase-text";
+            phraseTextSpan.textContent = phrase;
+            voteCountSpan.className = "vote-count";
+            voteCountSpan.textContent = votes;
+
+            // Create intermediary element
+            const voteBtn = document.createElement("button");
+            voteBtn.dataset.candidateId = candidateId;
+            voteBtn.className = "vote-btn";
+            voteBtn.appendChild(phraseTextSpan);
+            voteBtn.appendChild(voteCountSpan);
+
+            // Make button send a POST request to vote for this candidate
+            voteBtn.addEventListener("click", () => {
+                vote(voteBtn.dataset.candidateId);
+            });
+
+            const li = document.createElement("li");
+            li.id = `candidate-${candidateId}`;
+            li.appendChild(voteBtn);
+            $candidateList.appendChild(li);
         });
 
-        const li = document.createElement("li");
-        li.appendChild(voteBtn);
-        $candidateList.appendChild(li);
+        if (renderInterval) clearInterval(renderInterval);
+        renderInterval = setInterval(updateCandidateStyles, 1000);
+        updateCandidateStyles();
+    }
 
-        const styles = getComputedStyle(document.documentElement);
-        const startColor = styles.getPropertyValue("--start-color").trim();
-        const endColor = styles.getPropertyValue("--end-color").trim();
+    function updateCandidateStyles() {
+        candidates = candidates.filter((candidate) => {
+            const millis = getMillisRemaining(candidate);
+            const li = document.getElementById(`candidate-${candidate.candidate_id}`);
 
-        function updateColor() {
-            const progress = (10000 - millisRemaining) / 10000;
-            const color = interpolateColor(startColor, endColor, progress);
-            console.log(color);
-            voteBtn.style.setProperty("background-color", color, "important");
-        }
+            if (!li) return true;
 
-        updateColor();
-        const interval = setInterval(() => {
-            updateColor();
-            if (millisRemaining <= 0) {
-                clearInterval(interval);
+            const btn = li.querySelector(".vote-btn");
+
+            if (millis <= 0) {
                 li.remove();
+                return false;
             }
 
-            millisRemaining -= 2000;
-        }, 2000);
+            const progress = (10000 - millis) / 10000;
+            const color = interpolateColor(startColor, endColor, progress);
+            console.log(color);
+
+            btn.style.setProperty("background-color", color, "important");
+
+            return true;
+        });
+
+        if (candidates.length === 0) {
+            clearInterval(renderInterval);
+            renderInterval = null;
+        }
     }
 
     function handleGameStateUpdate(gameState) {
@@ -268,16 +311,23 @@ const ZibbitClient = (function () {
         startCountdown(event["game_end_utc_time"], event["server_time"], $gameTimer);
     }
 
-
-
     function renderStory() {
-        $story.innerHTML = "";
+        $story.childNodes.forEach((child) => child.remove());
         story.forEach((wordItem) => {
             const wordText = wordItem["word"];
-            const flags = wordItem["flags"];
+            const wordId = wordItem["word_id"];
+            const numFlags = Number(wordItem["flags"]);
+
+            const flagSection = document.createElement("span");
+            flagSection.textContent = numFlags >= 1 ? `🚩x${numFlags}` : '';
+            flagSection.style.color = 'red';
+
             const wordElement = document.createElement("span");
             wordElement.className = "story-word";
             wordElement.textContent = wordText;
+            wordElement.appendChild(flagSection);
+            wordElement.dataset.wordId = wordId;
+            wordElement.id = `word-${wordId}`;
 
             $story.appendChild(wordElement);
         });
@@ -287,7 +337,7 @@ const ZibbitClient = (function () {
     function setCandidateListData(candidateListData) {
         candidates.length = 0;
         candidates.push(...candidateListData);
-        candidates.forEach(renderCandidate);
+        renderCandidates();
     }
 
     function setStoryListData(storyListData) {
@@ -300,6 +350,14 @@ const ZibbitClient = (function () {
 
     function handleCooldownUpdate(event) {
         isCooldown = true;
+
+        // Clear client side game data
+        story.length = 0;
+        candidates.length = 0;
+        $candidateList.childNodes.forEach((child) => child.remove());
+        $story.childNodes.forEach((child) => child.remove());
+        $story.innerHTML = "";
+        $story.innerHTML = "";
 
         // First hide game-specific stuff
         $candidatesListSection.hidden = true;
