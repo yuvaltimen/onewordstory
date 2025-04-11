@@ -73,7 +73,7 @@ const ZibbitClient = (function () {
         });
         eventSource.addEventListener("story_update", (e) => {
             console.log("story update");
-            setStoryListData(JSON.parse(e.data));
+            setStoryListData(JSON.parse(e.data)["story"]);
         });
         eventSource.addEventListener("candidate_update", (e) => {
            console.log("candidate update");
@@ -121,7 +121,7 @@ const ZibbitClient = (function () {
             body: JSON.stringify({
                 "candidate_id": candidateId
             })
-        }).catch(err => console.error("Failed to submit vote", err));
+        }).catch(err => console.error(`Failed to submit vote for id=${candidateId}`, err));
     }
 
     function flagWord(wordId) {
@@ -131,7 +131,7 @@ const ZibbitClient = (function () {
             body: JSON.stringify({
                 "word_id": wordId
             })
-        }).catch(err => console.error("Failed to submit flag", err));
+        }).catch(err => console.error(`Failed to submit flag for id=${wordId}`, err));
     }
 
     function getMillisRemaining(candidate) {
@@ -385,7 +385,7 @@ const ZibbitClient = (function () {
     function setStoryListData(storyListData) {
         console.log(storyListData);
         story.length = 0;
-        story.push(...(storyListData["story"] || []));
+        story.push(...(storyListData || []));
         renderStory();
     }
 

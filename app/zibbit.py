@@ -110,7 +110,7 @@ EVENT_WORD_FLAG_CHANNEL = "word_flag"
 # Length of a game
 GAME_LENGTH_SECONDS = 120
 # Length of cooldown between games
-GAME_COOLDOWN_SECONDS = 20
+GAME_COOLDOWN_SECONDS = 10
 # TTL for candidate
 CANDIDATE_DECAY_SECONDS = 10
 # TTL for restriction on submitting the same phrase again
@@ -172,8 +172,8 @@ class ZibbitGame:
             } for i in range(len(word_ids))],
             "candidates": [{
                 "candidate_id": candidate_key.split(":")[1],
-                "phrase": candidate_items[idx + 1].split("|")[0],
-                "votes": candidate_items[idx + 1].split("|")[1] or 0,
+                "phrase": candidate_items[idx].split("|")[0],
+                "votes": candidate_items[idx].split("|")[1] or 0,
                 "expiration_utc_time": (
                         datetime.now() + timedelta(seconds=await self.redis.ttl(candidate_key))
                 ).timestamp()
