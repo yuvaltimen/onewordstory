@@ -16,8 +16,9 @@ services:
       - "traefik.enable=true"
       - "traefik.http.services.zibbit_web.loadbalancer.server.port=8000"
       - "traefik.http.routers.zibbit_web.rule=Host(`test.domain.local`)"
-      - "traefik.http.routers.backend.entrypoints=websecure"
-      - "traefik.http.routers.backend.tls.certresolver=myresolver"
+      - "traefik.http.routers.zibbit_web.entrypoints=websecure"
+      - "traefik.http.routers.zibbit_web.tls.certresolver=myresolver"
+      - "traefik.http.routers.zibbit_web"
       - "traefik.enable=true"
     networks:
       - traefik-servicenet
