@@ -102,21 +102,23 @@ GAME_EVENTS_CHANNEL_PREFIX = "game_events"
 # Channels that store pub/sub for game events
 EVENT_GAME_START_CHANNEL = "game_start"
 EVENT_GAME_END_CHANNEL = "game_end"
+EVENT_STORY_UPDATE_CHANNEL = "story_update"
 EVENT_CANDIDATE_UPDATE_CHANNEL = "candidate_update"
 EVENT_CANDIDATE_VOTE_CHANNEL = "candidate_vote"
-EVENT_STORY_UPDATE_CHANNEL = "story_update"
 EVENT_WORD_FLAG_CHANNEL = "word_flag"
 
 # Length of a game
-GAME_LENGTH_SECONDS = 15
+GAME_LENGTH_SECONDS = 120
 # Length of cooldown between games
-GAME_COOLDOWN_SECONDS = 5
+GAME_COOLDOWN_SECONDS = 20
 # TTL for candidate
 CANDIDATE_DECAY_SECONDS = 10
 # TTL for restriction on submitting the same phrase again
 CANDIDATE_SUBMISSION_COOLDOWN_SECONDS = 20
 # Number of unique votes required for a candidate phrase to be appended to the story
 CANDIDATE_VOTE_THRESHOLD = 3
+# Number of unique word flags required for a word to be removed from the story
+WORD_FLAG_THRESHOLD = 3
 
 
 class ZibbitGame:
@@ -323,21 +325,21 @@ class ZibbitGame:
     async def handle_word_flag(self, word_id: str) -> bool:
         # Check if word has already been flagged
         story_items = await self.redis.lrange(STORY_KEY, 0, -1)
-        if not word_id in [itm.split("|")[0] for itm in story_items]:
+        if not word_id in [itm.split("|")[1] for itm in story_items]:
             return False
         word_flag_key = f"{STORY_FLAG_KEY_PREFIX}:{word_id}"
-        word_flags_counter = await self.redis.get(word_flag_key)
-        if word_flags_counter:
+        word_flags_counter = await self.redis.incr(word_flag_key)
+        if word_flags_counter >= WORD_FLAG_THRESHOLD:
             # Remove the word from the story
-            new_story = filter(lambda x: x.split("|")[0] != word_id, story_items)
+            new_story = list(filter(lambda x: x.split("|")[1] != word_id, story_items))
             await self.redis.delete(STORY_KEY, word_flag_key)
-            await self.redis.rpush(STORY_KEY, *new_story)
+            if new_story:
+                await self.redis.rpush(STORY_KEY, *new_story)
             # Send single update
             await self.send_full_story()
         else:
-            num_flags = await self.redis.incr(word_flag_key)
             await self.publish_event(EVENT_WORD_FLAG_CHANNEL, {
                 "word_id": word_id,
-                "flags": num_flags
+                "flags": word_flags_counter
             })
         return True

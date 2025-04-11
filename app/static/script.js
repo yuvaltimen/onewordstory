@@ -71,20 +71,22 @@ const ZibbitClient = (function () {
             setStoryListData([]);
             setCandidateListData([]);
         });
-        eventSource.addEventListener("candidate_update", (e) => {
-           console.log("candidate update");
-           handleAppendCandidate(JSON.parse(e.data));
-        });
         eventSource.addEventListener("story_update", (e) => {
             console.log("story update");
             setStoryListData(JSON.parse(e.data));
         });
+        eventSource.addEventListener("candidate_update", (e) => {
+           console.log("candidate update");
+           handleAppendCandidate(JSON.parse(e.data));
+        });
         eventSource.addEventListener("candidate_vote", (e) => {
             console.log("candidate vote");
             handleCandidateVote(JSON.parse(e.data));
-        })
-
-        // ... more handlers
+        });
+        eventSource.addEventListener("word_flag", (e) => {
+            console.log("word flag");
+            handleWordFlag(JSON.parse(e.data));
+        });
     }
 
     function setupCandidateSubmissionForm() {
@@ -119,7 +121,17 @@ const ZibbitClient = (function () {
             body: JSON.stringify({
                 "candidate_id": candidateId
             })
-        }).catch(err => console.error("Failed to submit vote", err))
+        }).catch(err => console.error("Failed to submit vote", err));
+    }
+
+    function flagWord(wordId) {
+        fetch("/flag_word", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                "word_id": wordId
+            })
+        }).catch(err => console.error("Failed to submit flag", err));
     }
 
     function getMillisRemaining(candidate) {
@@ -165,8 +177,6 @@ const ZibbitClient = (function () {
             el.remove();
         }, 100)
     }
-
-
 
     function renderCandidates() {
         $candidateList.childNodes.forEach((child) => child.remove());
@@ -249,7 +259,11 @@ const ZibbitClient = (function () {
                 setCandidateListData([]);
                 break;
             case "IN_PLAY":
-                handleGameStartEvent(gameState["game_end_utc_time"]);
+                handleGameStartEvent({
+                    "game_start_utc_time": gameState["game_start_utc_time"],
+                    "game_end_utc_time": gameState["game_end_utc_time"],
+                    "server_time": gameState["server_time"]
+                });
                 setStoryListData(gameState["story"]);
                 setCandidateListData(gameState["candidates"]);
                 break;
@@ -259,7 +273,24 @@ const ZibbitClient = (function () {
         }
     }
 
+    function handleWordFlag(wordFlagEvent) {
+        console.log(wordFlagEvent);
+        const wordId = wordFlagEvent["word_id"];
+        const numFlags = wordFlagEvent["flags"];
+
+        story.forEach((storyItem) => {
+            if (storyItem["word_id"] === wordId) {
+                storyItem.flags = numFlags;
+            }
+        });
+
+        renderStory();
+    }
+
     function startCountdown(utcTimestamp, serverTimestamp, timerElement) {
+
+        console.log(utcTimestamp);
+        console.log(timerElement);
         // Convert timestamp to milliseconds if it looks like seconds
         if (utcTimestamp < 1e12) {
             utcTimestamp *= 1000;
@@ -296,6 +327,8 @@ const ZibbitClient = (function () {
     }
 
     function handleGameStartEvent(event) {
+
+        console.log(event);
         isCooldown = false;
 
         // First hide cooldown specific stuff
@@ -313,21 +346,29 @@ const ZibbitClient = (function () {
 
     function renderStory() {
         $story.childNodes.forEach((child) => child.remove());
+        $story.innerHTML = "";
         story.forEach((wordItem) => {
             const wordText = wordItem["word"];
             const wordId = wordItem["word_id"];
             const numFlags = Number(wordItem["flags"]);
 
-            const flagSection = document.createElement("span");
-            flagSection.textContent = numFlags >= 1 ? `🚩x${numFlags}` : '';
-            flagSection.style.color = 'red';
-
             const wordElement = document.createElement("span");
-            wordElement.className = "story-word";
+            wordElement.classList.add("story-word", "notification-wrapper");
             wordElement.textContent = wordText;
-            wordElement.appendChild(flagSection);
+
             wordElement.dataset.wordId = wordId;
             wordElement.id = `word-${wordId}`;
+
+            wordElement.addEventListener("click", () => {
+                flagWord(wordElement.dataset.wordId);
+            });
+
+            if (numFlags > 0) {
+                const flagSection = document.createElement("span");
+                flagSection.className = "notification-bubble";
+                flagSection.textContent = "!".repeat(numFlags);
+                wordElement.appendChild(flagSection);
+            }
 
             $story.appendChild(wordElement);
         });
