@@ -13,7 +13,10 @@ from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 from zibbit import ZibbitGame, GAME_EVENTS_CHANNEL_PREFIX
 
 REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
-REDIS_PORT = 6379
+REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+
+APP_HOST = os.getenv('REDIS_HOST', '0.0.0.0')
+APP_PORT = int(os.getenv('REDIS_HOST', '8000'))
 zg = ZibbitGame(redis_host=REDIS_HOST, redis_port=REDIS_PORT)
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 
@@ -116,8 +119,8 @@ app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=8080,
+        host=APP_HOST,
+        port=APP_PORT,
         log_level="debug",
         reload=True,
     )

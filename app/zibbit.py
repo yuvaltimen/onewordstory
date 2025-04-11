@@ -113,12 +113,21 @@ GAME_LENGTH_SECONDS = 120
 GAME_COOLDOWN_SECONDS = 10
 # TTL for candidate
 CANDIDATE_DECAY_SECONDS = 10
+# Max number of words allowed per candidate
+MAX_PHRASE_WORD_LENGTH = 5
 # TTL for restriction on submitting the same phrase again
 CANDIDATE_SUBMISSION_COOLDOWN_SECONDS = 20
 # Number of unique votes required for a candidate phrase to be appended to the story
 CANDIDATE_VOTE_THRESHOLD = 3
 # Number of unique word flags required for a word to be removed from the story
 WORD_FLAG_THRESHOLD = 3
+
+
+def validate_phrase(inp: str):
+    if "|" in inp:
+        raise ValueError(f"bad input: {inp}")
+    if len(inp.strip().split(" ")) > MAX_PHRASE_WORD_LENGTH:
+        raise ValueError(f"Too big of an input: {inp}")
 
 
 class ZibbitGame:
@@ -247,7 +256,8 @@ class ZibbitGame:
         return list(range(starting_key + 1, ending_key + 1))
 
     async def handle_phrase_submission(self, phrase: str) -> bool:
-        self.validate_phrase(phrase)
+        phrase = phrase.strip()
+        validate_phrase(phrase)
         # Check if phrase has a cooldown submission time, if so reject it
         cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{phrase}"
         if await self.redis.get(cooldown_key):
@@ -354,7 +364,4 @@ class ZibbitGame:
             })
         return True
 
-    def validate_phrase(self, inp: str):
-        if "|" in inp:
-            raise ValueError(f"bad input: {inp}")
 

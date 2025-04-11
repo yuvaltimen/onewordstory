@@ -201,8 +201,6 @@ body, html {
     box-shadow: 0 0 0 2px white;
 }
 
-
-
 /* Responsive tweaks */
 @media (max-width: 600px) {
     .header h1 {

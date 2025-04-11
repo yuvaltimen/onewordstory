@@ -161,21 +161,8 @@ const ZibbitClient = (function () {
             // The vote crossed the threshold, find winning candidate and remove from list
             const idxOfVotedCandidate = candidates.findIndex((itm) => itm.candidate_id === candidateId);
             candidates.splice(idxOfVotedCandidate, 1);
-
-            // Animate the winning element
-            const winningCandidate = document.getElementById(`candidate-${candidateId}`);
-            animateWinningCandidate(winningCandidate);
         }
-
         renderCandidates();
-    }
-
-    function animateWinningCandidate(el) {
-        el.style.backgroundColor = "blue";
-        setTimeout(() => {
-            el.style.backgroundColor = "";
-            el.remove();
-        }, 100)
     }
 
     function renderCandidates() {
