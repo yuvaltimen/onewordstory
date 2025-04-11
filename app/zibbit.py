@@ -1,5 +1,5 @@
 import json
-import datetime
+from datetime import datetime, UTC, timedelta
 import asyncio
 import redis.asyncio as redis
 
@@ -30,35 +30,42 @@ Game state looks like:
     "game_status": "IN_PLAY",
     "story": [
         {
+            "word_id": <str>,
             "word": "The",
             "flags": 0
         },
         {
+            "word_id": <str>,
             "word": "story",
             "flags": 0
         },
         {
+            "word_id": <str>,
             "word": "starts",
             "flags": 1
         }
     ],
     "candidates": [
         {
+            "candidate_id": <str>,
             "phrase": "with a very short",
             "votes": 1,
             "expiration_utc_time": <timestamp>
         },
         {
+            "candidate_id": <str>,
             "phrase": "on a dark and stormy",
             "votes": 1,
             "expiration_utc_time": <timestamp>
         },
         {
+            "candidate_id": <str>,
             "phrase": "off on a",
             "votes": 1,
             "expiration_utc_time": <timestamp>
         },
         {
+            "candidate_id": <str>,
             "phrase": "to sound like",
             "votes": 1,
             "expiration_utc_time": <timestamp>
@@ -85,6 +92,10 @@ USER_RATE_LIMIT_PREFIX = "user"
 GAME_TTL_KEY = "game_ttl"
 # Prefix for storing story words to flag counter
 STORY_FLAG_KEY_PREFIX = "story_flag"
+# Stores the incrementing ids for candidates
+CANDIDATE_AUTOINCR_KEY = "candidate_autoincr"
+# Stores the incrementing ids for words
+WORD_AUTOINCR_KEY = "word_autoincr"
 
 # Denotes the channel prefix to subscribe to for game updates
 GAME_EVENTS_CHANNEL_PREFIX = "game_events"
@@ -104,6 +115,8 @@ GAME_COOLDOWN_SECONDS = 5
 CANDIDATE_DECAY_SECONDS = 10
 # TTL for restriction on submitting the same phrase again
 CANDIDATE_SUBMISSION_COOLDOWN_SECONDS = 20
+# Number of unique votes required for a candidate phrase to be appended to the story
+CANDIDATE_VOTE_THRESHOLD = 3
 
 
 class ZibbitGame:
@@ -167,9 +180,9 @@ class ZibbitGame:
         await self.redis.set(GAME_STATUS_KEY, "IN_PLAY")
 
         # Set the game state data to a new game
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.now(UTC)
         self.game_start_utc_time = now.timestamp()
-        self.game_end_utc_time = (now + datetime.timedelta(seconds=GAME_LENGTH_SECONDS)).timestamp()
+        self.game_end_utc_time = (now + timedelta(seconds=GAME_LENGTH_SECONDS)).timestamp()
         self.next_game_start_utc_time = None
 
         await self.publish_event(EVENT_GAME_START_CHANNEL, {
@@ -181,8 +194,8 @@ class ZibbitGame:
 
     async def handle_end_game(self) -> None:
         await self.redis.set(GAME_STATUS_KEY, "COOLDOWN")
-        now = datetime.datetime.now(datetime.UTC)
-        self.next_game_start_utc_time = (now + datetime.timedelta(seconds=GAME_COOLDOWN_SECONDS)).timestamp()
+        now = datetime.now(UTC)
+        self.next_game_start_utc_time = (now + timedelta(seconds=GAME_COOLDOWN_SECONDS)).timestamp()
         self.game_start_utc_time = None
         self.game_end_utc_time = None
 
@@ -207,7 +220,20 @@ class ZibbitGame:
         word_flags = await self.redis.keys(f"{STORY_FLAG_KEY_PREFIX}:*")
         if word_flags:
             await self.redis.delete(*word_flags)
+        # Reset autoincrement ids back to 1
+        await self.redis.set(CANDIDATE_AUTOINCR_KEY, 1)
+        await self.redis.set(WORD_AUTOINCR_KEY, 1)
 
+    async def get_autoincr_candidate_ids(self, amount = 1) -> list[int]:
+        return await self.autoincr_id_wrapper(CANDIDATE_AUTOINCR_KEY, amount)
+
+    async def get_autoincr_word_ids(self, amount = 1) -> list[int]:
+        return await self.autoincr_id_wrapper(WORD_AUTOINCR_KEY, amount)
+
+    async def autoincr_id_wrapper(self, redis_key, amount = 1) -> list[int]:
+        ending_key = await self.redis.incr(redis_key, amount=amount)
+        starting_key = ending_key - amount
+        return list(range(starting_key + 1, ending_key + 1))
 
     async def handle_phrase_submission(self, phrase: str) -> bool:
         # Check if phrase has a cooldown submission time, if so reject it
@@ -215,66 +241,103 @@ class ZibbitGame:
         if await self.redis.get(cooldown_key):
             return False
         else:
-            candidate_key = f"{CANDIDATES_KEY_PREFIX}:{phrase}"
-            await self.redis.setex(candidate_key, CANDIDATE_DECAY_SECONDS, 0)
+            candidate_id = await self.get_autoincr_candidate_ids()
+            candidate_key = f"{CANDIDATES_KEY_PREFIX}:{candidate_id[0]}"
+            # Set key as candidate_id, value to be phrase|num_votes (initialized to 0)
+            await self.redis.setex(candidate_key, CANDIDATE_DECAY_SECONDS, f"{phrase}|0")
             await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
             await self.publish_event(EVENT_CANDIDATE_UPDATE_CHANNEL, {
+                "candidate_id": candidate_id,
                 "phrase": phrase,
                 "votes": 0,
-                "expiration_utc_time": (
-                        datetime.datetime.now()
-                        + datetime.timedelta(seconds=CANDIDATE_DECAY_SECONDS)
-                ).timestamp()
+                "expiration_utc_time": (datetime.now() + timedelta(seconds=CANDIDATE_DECAY_SECONDS)).timestamp()
             })
             return True
 
 
-    async def handle_vote(self, candidate: str) -> bool:
+    async def handle_vote(self, candidate_id: str) -> bool:
         # Check if phrase is actually a candidate
-        candidate_key = f"{CANDIDATES_KEY_PREFIX}:{candidate}"
-        candidate_num_votes = await self.redis.get(candidate_key)
-        if candidate_num_votes:
-            remaining_ttl = await self.redis.ttl(candidate_key)
-            cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{candidate}"
-            updated_num_votes = candidate_num_votes + 1
-            # Votes keep the candidate alive for longer
-            updated_ttl = remaining_ttl + updated_num_votes
-            await self.redis.setex(candidate_key, updated_ttl, updated_num_votes)
-            # Since the candidate is being kept alive for longer, it should also have its cooldown time reset
-            await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
-            await self.publish_event(EVENT_CANDIDATE_VOTE_CHANNEL, {
-                "candidate": candidate,
-                "votes": updated_num_votes,
-                "expiration_utc_time": (
-                    datetime.datetime.now()
-                    + datetime.timedelta(seconds=updated_ttl)
-                ).timestamp()
-            })
-            return True
+        candidate_key = f"{CANDIDATES_KEY_PREFIX}:{candidate_id}"
+        candidate_info = await self.redis.get(candidate_key)
+        if not candidate_info:
+            return False
         else:
-            return False
+            candidate_phrase, candidate_num_votes = candidate_info.split("|")
+            cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{candidate_phrase}"
+            # Reset candidate cooldown time
+            await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
+            updated_num_votes = int(candidate_num_votes) + 1
+
+            if updated_num_votes >= CANDIDATE_VOTE_THRESHOLD:
+                await self.redis.delete(candidate_key)
+                await self.publish_event(EVENT_CANDIDATE_VOTE_CHANNEL, {
+                    "candidate_id": candidate_id,
+                    "candidate": candidate_phrase,
+                    "votes": updated_num_votes,
+                    "expiration_utc_time": None
+                })
+                await self.handle_insert_phrase_to_story(candidate_phrase)
+                return True
+            else:
+                # Votes keep the candidate alive for longer
+                remaining_ttl = await self.redis.ttl(candidate_key)
+                updated_ttl = remaining_ttl + updated_num_votes
+                await self.redis.setex(candidate_key, updated_ttl, f"{candidate_phrase}|{updated_num_votes}")
+                await self.publish_event(EVENT_CANDIDATE_VOTE_CHANNEL, {
+                    "candidate_id": candidate_id,
+                    "candidate": candidate_phrase,
+                    "votes": updated_num_votes,
+                    "expiration_utc_time": (datetime.now() + timedelta(seconds=updated_ttl)).timestamp()
+                })
+                return True
 
 
-    async def handle_word_flag(self, word: str) -> bool:
+    async def send_full_story(self):
+        full_story = await self.redis.lrange(STORY_KEY, 0, -1)
+        word_and_word_ids = [itm.split("|") for itm in full_story]
+        words = [itm[0] for itm in word_and_word_ids]
+        word_ids = [itm[1] for itm in word_and_word_ids]
+        word_flag_keys = [f"{STORY_FLAG_KEY_PREFIX}:{word_id}" for word_id in word_ids]
+        word_flags = await self.redis.mget(word_flag_keys)
+        await self.publish_event(EVENT_STORY_UPDATE_CHANNEL, {
+            "story": [{
+                "word": words[i],
+                "word_id": word_ids[i],
+                "flags": word_flags[i] or 0
+            } for i in range(len(word_ids))]
+        })
+
+
+    async def handle_insert_phrase_to_story(self, phrase: str):
+        # Tokenize phrase and insert
+        # Each wordItem is word|word_id
+        words = phrase.split(" ")
+        next_word_ids = await self.get_autoincr_word_ids(len(words))
+        word_items = [f"{w}|{next_word_ids[idx]}" for idx, w in enumerate(words)]
+        await self.redis.rpush(STORY_KEY, *word_items)
+
+        # Send single update
+        await self.send_full_story()
+
+
+    async def handle_word_flag(self, word_id: str) -> bool:
         # Check if word has already been flagged
-        story = await self.redis.lrange(STORY_KEY, 0, -1)
-        if not word.encode("utf-8") in story:
+        story_items = await self.redis.lrange(STORY_KEY, 0, -1)
+        if not word_id in [itm.split("|")[0] for itm in story_items]:
             return False
-        word_flag_key = f"{STORY_FLAG_KEY_PREFIX}:{word}"
+        word_flag_key = f"{STORY_FLAG_KEY_PREFIX}:{word_id}"
         word_flags_counter = await self.redis.get(word_flag_key)
         if word_flags_counter:
             # Remove the word from the story
-            # TODO: Make words id-based, right now this filters out all identical words
-            new_story = filter(lambda x: x.decode("utf-8") != word, story)
+            new_story = filter(lambda x: x.split("|")[0] != word_id, story_items)
             await self.redis.delete(STORY_KEY, word_flag_key)
             await self.redis.rpush(STORY_KEY, *new_story)
-            await self.publish_event(EVENT_STORY_UPDATE_CHANNEL, {
-                "story": new_story
-            })
+            # Send single update
+            await self.send_full_story()
         else:
             num_flags = await self.redis.incr(word_flag_key)
             await self.publish_event(EVENT_WORD_FLAG_CHANNEL, {
-                "word": word,
+                "word_id": word_id,
                 "flags": num_flags
             })
         return True

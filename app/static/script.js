@@ -1,4 +1,25 @@
 
+
+function interpolateColor(color1, color2, factor) {
+    const c1 = parseInt(color1.slice(1), 16);
+    const c2 = parseInt(color2.slice(1), 16);
+
+    const r1 = (c1 >> 16) & 0xff;
+    const g1 = (c1 >> 8) & 0xff;
+    const b1 = c1 & 0xff;
+
+    const r2 = (c2 >> 16) & 0xff;
+    const g2 = (c2 >> 8) & 0xff;
+    const b2 = c2 & 0xff;
+
+    const r = Math.round(r1 + (r2 - r1) * factor);
+    const g = Math.round(g1 + (g2 - g1) * factor);
+    const b = Math.round(b1 + (b2 - b1) * factor);
+
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+
 const ZibbitClient = (function () {
     let eventSource = null;
     let isCooldown = false;
@@ -21,7 +42,7 @@ const ZibbitClient = (function () {
 
     function init() {
         setupSSE();
-        setupInteractivity();
+        setupCandidateSubmissionForm();
         console.log("Zibbit initialized");
     }
 
@@ -42,21 +63,23 @@ const ZibbitClient = (function () {
         eventSource.addEventListener("game_end", (e) => {
             console.log("game ended!");
             handleCooldownUpdate(JSON.parse(e.data));
-            setStoryData([]);
+            setStoryListData([]);
             setCandidateListData([]);
         });
         eventSource.addEventListener("candidate_update", (e) => {
            console.log("candidate update");
            handleAppendCandidate(JSON.parse(e.data));
         });
+        eventSource.addEventListener("story_update", (e) => {
+            console.log("story update");
+            setStoryListData(JSON.parse(e.data));
+        });
+        eventSource.addEventListener("candidate_vote", (e) => {
+            console.log("candidate vote");
+            handleCandidateVote(JSON.parse(e.data));
+        })
 
         // ... more handlers
-    }
-
-    function setupInteractivity() {
-        setupCandidateSubmissionForm();
-        setupCandidateVoteHandlers();
-        setupWordFlagHandlers();
     }
 
     function setupCandidateSubmissionForm() {
@@ -69,11 +92,6 @@ const ZibbitClient = (function () {
             submitCandidate(text);
         })
     }
-
-    function setupCandidateVoteHandlers() {
-
-    }
-
 
     function submitCandidate(value) {
         fetch("/submit_candidate", {
@@ -89,11 +107,13 @@ const ZibbitClient = (function () {
             }, (error) => console.log(error));
     }
 
-    function vote(phrase) {
-        fetch("/submit-vote", {
+    function vote(candidateId) {
+        fetch("/vote", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ phrase })
+            body: JSON.stringify({
+                "candidate_id": candidateId
+            })
         }).catch(err => console.error("Failed to submit vote", err))
     }
 
@@ -102,28 +122,21 @@ const ZibbitClient = (function () {
         renderCandidate(candidateData);
     }
 
-    function interpolateColor(color1, color2, factor) {
-        const c1 = parseInt(color1.slice(1), 16);
-        const c2 = parseInt(color2.slice(1), 16);
-
-        const r1 = (c1 >> 16) & 0xff;
-        const g1 = (c1 >> 8) & 0xff;
-        const b1 = c1 & 0xff;
-
-        const r2 = (c2 >> 16) & 0xff;
-        const g2 = (c2 >> 8) & 0xff;
-        const b2 = c2 & 0xff;
-
-        const r = Math.round(r1 + (r2 - r1) * factor);
-        const g = Math.round(g1 + (g2 - g1) * factor);
-        const b = Math.round(b1 + (b2 - b1) * factor);
-
-        return `rgb(${r}, ${g}, ${b})`;
+    function handleCandidateVote(candidateVoteData) {
+        // if (!!candidateVoteData["expiration_utc_time"]) {
+        //     const candidateVotedFor = candidates.find((cand) => cand["candidateId"] === candidateVoteData["candidateId"]);
+        //
+        // }
+        // // The vote crossed the threshold, animate winning candidate and remove from list
+        // else {
+        //
+        // }
     }
 
     function renderCandidate(candidateItem) {
         const phrase = candidateItem["phrase"];
         const votes = candidateItem["votes"];
+        const candidateId = candidateItem["candidate_id"];
         let expirationTimestamp = candidateItem["expiration_utc_time"];
 
         if (expirationTimestamp < 1e12) {
@@ -145,9 +158,15 @@ const ZibbitClient = (function () {
 
         // Create intermediary element
         const voteBtn = document.createElement("button");
+        voteBtn.dataset.candidateId = candidateId;
         voteBtn.className = "vote-btn";
         voteBtn.appendChild(phraseTextSpan);
         voteBtn.appendChild(voteCountSpan);
+
+        // Make button send a POST request to vote for this candidate
+        voteBtn.addEventListener("click", () => {
+            vote(voteBtn.dataset.candidateId);
+        });
 
         const li = document.createElement("li");
         li.appendChild(voteBtn);
@@ -183,12 +202,12 @@ const ZibbitClient = (function () {
                 break;
             case "COOLDOWN":
                 handleCooldownUpdate(gameState);
-                setStoryData([]);
+                setStoryListData([]);
                 setCandidateListData([]);
                 break;
             case "IN_PLAY":
                 handleGameStartEvent(gameState["game_end_utc_time"]);
-                setStoryData(gameState["story"]);
+                setStoryListData(gameState["story"]);
                 setCandidateListData(gameState["candidates"]);
                 break;
             default:
@@ -250,17 +269,18 @@ const ZibbitClient = (function () {
     }
 
 
-    function setStoryData(storyData) {
-        const wordListHtml = storyData.map((wordItem) => {
-            const word = wordItem["word"];
-            const flags = wordItem["flags"];
-            return (flags > 0
-                    ? `<span class=\"story-word\" data-word=\"${word}\">${word}</span>`
-                    : `<span class=\"story-word\" data-word=\"${word}\">${word}</span>`
-            );
-        });
 
-        $story.innerHTML = wordListHtml.join(" ");
+    function renderStory() {
+        $story.innerHTML = "";
+        story.forEach((wordItem) => {
+            const wordText = wordItem["word"];
+            const flags = wordItem["flags"];
+            const wordElement = document.createElement("span");
+            wordElement.className = "story-word";
+            wordElement.textContent = wordText;
+
+            $story.appendChild(wordElement);
+        });
     }
 
 
@@ -268,6 +288,13 @@ const ZibbitClient = (function () {
         candidates.length = 0;
         candidates.push(...candidateListData);
         candidates.forEach(renderCandidate);
+    }
+
+    function setStoryListData(storyListData) {
+        console.log(storyListData);
+        story.length = 0;
+        story.push(...(storyListData["story"] || []));
+        renderStory();
     }
 
 

@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 import json
 import os
 import asyncio
@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 from zibbit import ZibbitGame, GAME_EVENTS_CHANNEL_PREFIX
 
-REDIS_HOST = "yuvaltimen.xyz"  #os.getenv('REDIS_HOST', 'redis')
+REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = 6379
 zg = ZibbitGame(redis_host=REDIS_HOST, redis_port=REDIS_PORT)
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -52,7 +52,7 @@ async def sse_events():
             # Give the client the live game state
             initial_game_state = await zg.get_game_state()
             yield ServerSentEvent(event="game_state", data=json.dumps({
-                "server_time": datetime.datetime.now().timestamp(),
+                "server_time": datetime.now().timestamp(),
                 **initial_game_state
             }))
 
@@ -64,7 +64,7 @@ async def sse_events():
                     continue
                 event_type = message["channel"].split(":")[-1]
                 yield ServerSentEvent(event=event_type, data=json.dumps({
-                    "server_time": datetime.datetime.now().timestamp(),
+                    "server_time": datetime.now().timestamp(),
                     **json.loads(message['data'])
                 }))
         finally:
@@ -81,7 +81,7 @@ async def submit_candidate(request: Request):
     phrase = request_data["phrase"]
     if await zg.handle_phrase_submission(phrase):
         print("successful submit_candidate")
-        return JSONResponse(status_code=200, content=(await zg.get_game_state()))
+        return JSONResponse(status_code=200, content='Success')
     else:
         print("failed submit_candidate")
         return JSONResponse(status_code=400, content='Unable to submit candidate')
@@ -91,11 +91,11 @@ async def vote(request: Request):
     client_ip = get_client_ip(request)
     print(f"{client_ip} -> /vote")
     request_data = await request.json()
-    candidate = request_data["candidate"]
-    if not candidate:
+    candidate_id = request_data["candidate_id"]
+    if not candidate_id:
         return 'Empty', 400
-    if await zg.handle_vote(candidate):
-        return JSONResponse(status_code=200, content=(await zg.get_game_state()))
+    if await zg.handle_vote(candidate_id):
+        return JSONResponse(status_code=200, content='Success')
     else:
         return JSONResponse(status_code=400, content='Unable to submit vote')
 
@@ -106,7 +106,7 @@ async def submit_word_flag(request: Request):
     request_data = await request.json()
     word = request_data["word"]
     if await zg.handle_word_flag(word):
-        return JSONResponse(status_code=200, content=(await zg.get_game_state()))
+        return JSONResponse(status_code=200, content='Success')
     else:
         return JSONResponse(status_code=400, content='Unable to submit flag')
 
@@ -116,7 +116,7 @@ app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="localhost",
+        host="0.0.0.0",
         port=8080,
         log_level="debug",
         reload=True,
