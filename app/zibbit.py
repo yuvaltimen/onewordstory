@@ -247,6 +247,7 @@ class ZibbitGame:
         return list(range(starting_key + 1, ending_key + 1))
 
     async def handle_phrase_submission(self, phrase: str) -> bool:
+        self.validate_phrase(phrase)
         # Check if phrase has a cooldown submission time, if so reject it
         cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{phrase}"
         if await self.redis.get(cooldown_key):
@@ -352,3 +353,8 @@ class ZibbitGame:
                 "flags": word_flags_counter
             })
         return True
+
+    def validate_phrase(self, inp: str):
+        if "|" in inp:
+            raise ValueError(f"bad input: {inp}")
+
