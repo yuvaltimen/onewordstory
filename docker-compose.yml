@@ -1,40 +1,74 @@
 services:
-#
-#  client1:
-#    build:
-#      context: ./client
-#    depends_on:
-#      - web
-#    environment:
-#      - NAME=client1
-#      - TARGET=http://web:8080
-#
-#  client2:
-#    build:
-#      context: ./client
-#    depends_on:
-#      - web
-#    environment:
-#    - NAME=client2
-#    - TARGET=http://web:8080
-#
-#  client3:
-#    build:
-#      context: ./client
-#    depends_on:
-#      - web
-#    environment:
-#    - NAME=client3
-#    - TARGET=http://web:8080
-
-  web:
-    build: .
-    ports:
-      - "8080:8080"
-    depends_on:
-      - redis
-    env_file:
-      - ".env"
 
   redis:
     image: redis:7-alpine
+
+  zibbit_web:
+    image: yuvaltimen/onewordstory:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - redis
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.zibbit_web.loadbalancer.server.port=8000"
+      - "traefik.http.routers.zibbit_web.rule=Host(`test.domain.local`)"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=myresolver"
+      - "traefik.enable=true"
+    networks:
+      - traefik-servicenet
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:edge
+    networks:
+      - docker-proxynet
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      LOG_LEVEL: DEBUG
+      CONTAINERS: 1
+      SERVICES: 1
+      NODES: 1
+      NETWORKS: 1
+      TASKS: 1
+      VERSION: 1
+
+  traefik:
+    image: traefik:v3.1
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker"
+      - "--providers.docker.exposedByDefault=false"
+      - "--providers.docker.endpoint=tcp://docker-proxy:2375"
+      - "--providers.docker.network=docker-proxynet"
+      - "--entryPoints.web.address=:80"
+      - "--entryPoints.websecure.address=:443"
+      - "--entryPoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entryPoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=ytimen@yuvaltimen.xyz"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    depends_on:
+      - docker-proxy
+    read_only: true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - letsencrypt:/letsencrypt
+    networks:
+      - traefik-servicenet
+      - docker-proxynet
+
+volumes:
+  letsencrypt:
+
+networks:
+  traefik-servicenet:
+    name: traefik-servicenet
+  docker-proxynet:
+    name: docker-proxynet
+    internal: true
