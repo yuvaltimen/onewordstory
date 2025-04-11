@@ -153,22 +153,31 @@ class ZibbitGame:
 
 
     async def get_game_state(self):
-        story = await self.redis.get(STORY_KEY) or []
-        word_flags = await self.redis.mget(story)
-        candidates = await self.redis.keys(f"{CANDIDATES_KEY_PREFIX}:*")
-        candidate_votes = await self.redis.mget(candidates)
+        full_story = await self.redis.lrange(STORY_KEY, 0, -1)
+        word_and_word_ids = [itm.split("|") for itm in full_story]
+        words = [itm[0] for itm in word_and_word_ids]
+        word_ids = [itm[1] for itm in word_and_word_ids]
+        word_flag_keys = [f"{STORY_FLAG_KEY_PREFIX}:{word_id}" for word_id in word_ids]
+        word_flags = await self.redis.mget(word_flag_keys)
+
+        candidates_keys = await self.redis.keys(f"{CANDIDATES_KEY_PREFIX}:*")
+        candidate_items = await self.redis.mget(candidates_keys)
         game_status = await self.redis.get(GAME_STATUS_KEY) or "ERROR"
 
         return {
             "story": [{
-                "word": word,
-                "flags": word_flags[idx] or 0
-            } for idx, word in enumerate(story)],
+                "word": words[i],
+                "word_id": word_ids[i],
+                "flags": word_flags[i] or 0
+            } for i in range(len(word_ids))],
             "candidates": [{
-                "phrase": candidate,
-                "votes": candidate_votes[idx] or 0,
-                "expiration_utc_time": await self.redis.ttl(candidate)
-            } for idx, candidate  in enumerate(candidates)],
+                "candidate_id": candidate_key.split(":")[1],
+                "phrase": candidate_items[idx + 1].split("|")[0],
+                "votes": candidate_items[idx + 1].split("|")[1] or 0,
+                "expiration_utc_time": (
+                        datetime.now() + timedelta(seconds=await self.redis.ttl(candidate_key))
+                ).timestamp()
+            } for idx, candidate_key  in enumerate(candidates_keys)],
             "game_status": game_status,
             "game_start_utc_time": self.game_start_utc_time,
             "game_end_utc_time": self.game_end_utc_time,

@@ -376,6 +376,7 @@ const ZibbitClient = (function () {
 
 
     function setCandidateListData(candidateListData) {
+        console.log(candidateListData);
         candidates.length = 0;
         candidates.push(...candidateListData);
         renderCandidates();
