@@ -18,7 +18,6 @@ services:
       - "traefik.http.routers.zibbit_web.rule=Host(`test.domain.local`)"
       - "traefik.http.routers.zibbit_web.entrypoints=websecure"
       - "traefik.http.routers.zibbit_web.tls.certresolver=myresolver"
-      - "traefik.http.routers.zibbit_web"
       - "traefik.enable=true"
     networks:
       - traefik-servicenet
