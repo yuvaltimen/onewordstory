@@ -212,8 +212,8 @@ class ZibbitGame:
         if await self.redis.get(cooldown_key):
             return False
         else:
-            candidate_id = await self.get_autoincr_candidate_ids()
-            candidate_key = f"{CANDIDATES_KEY_PREFIX}:{candidate_id[0]}"
+            candidate_id = (await self.get_autoincr_candidate_ids())[0]
+            candidate_key = f"{CANDIDATES_KEY_PREFIX}:{candidate_id}"
             # Set key as candidate_id, value to be phrase|num_votes (initialized to 0)
             await self.redis.setex(candidate_key, CANDIDATE_DECAY_SECONDS, f"{phrase}|0")
             await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
@@ -243,7 +243,7 @@ class ZibbitGame:
                 await self.redis.delete(candidate_key)
                 await self.publish_event(EVENT_CANDIDATE_VOTE_CHANNEL, {
                     "candidate_id": candidate_id,
-                    "candidate": candidate_phrase,
+                    "phrase": candidate_phrase,
                     "votes": updated_num_votes,
                     "expiration_utc_time": None
                 })
@@ -256,7 +256,7 @@ class ZibbitGame:
                 await self.redis.setex(candidate_key, updated_ttl, f"{candidate_phrase}|{updated_num_votes}")
                 await self.publish_event(EVENT_CANDIDATE_VOTE_CHANNEL, {
                     "candidate_id": candidate_id,
-                    "candidate": candidate_phrase,
+                    "phrase": candidate_phrase,
                     "votes": updated_num_votes,
                     "expiration_utc_time": (datetime.now() + timedelta(seconds=updated_ttl)).timestamp()
                 })
@@ -292,7 +292,6 @@ class ZibbitGame:
 
 
     async def handle_word_flag(self, client_ip: str, word_id: str) -> bool:
-
         # Check if word has already been flagged
         story_items = await self.redis.lrange(STORY_KEY, 0, -1)
         if not word_id in [itm.split("|")[1] for itm in story_items]:

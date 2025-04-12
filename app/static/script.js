@@ -151,6 +151,7 @@ const ZibbitClient = (function () {
 
     function handleAppendCandidate(candidateData) {
         candidates.push(candidateData);
+        console.log(candidates);
         renderCandidates();
     }
 
@@ -161,9 +162,9 @@ const ZibbitClient = (function () {
         if (!!expirationTime) {
             // Update the candidate object
             candidates.forEach(obj => {
-                if (obj.candidate_id === candidateId) {
+                if (String(obj["candidate_id"]) === String(candidateId)) {
                     obj["expiration_utc_time"] = expirationTime;
-                    obj["votes"] = votes;
+                    obj["votes"] = Number(votes);
                 }
             })
         } else {
@@ -190,7 +191,7 @@ const ZibbitClient = (function () {
             phraseTextSpan.className = "phrase-text";
             phraseTextSpan.textContent = phrase;
             voteCountSpan.className = "vote-count";
-            voteCountSpan.textContent = votes;
+            voteCountSpan.textContent = `${votes}`;
 
             // Create intermediary element
             const voteBtn = document.createElement("button");
@@ -225,14 +226,12 @@ const ZibbitClient = (function () {
             const btn = li.querySelector(".vote-btn");
 
             if (millis <= 0) {
-                li.remove();
+                // li.remove();
                 return false;
             }
 
             const progress = (10000 - millis) / 10000;
             const color = interpolateColor(startColor, endColor, progress);
-            console.log(color);
-
             btn.style.setProperty("background-color", color, "important");
 
             return true;
@@ -302,9 +301,6 @@ const ZibbitClient = (function () {
     }
 
     function startCountdown(utcTimestamp, serverTimestamp, timerElement) {
-
-        console.log(utcTimestamp);
-        console.log(timerElement);
         // Convert timestamp to milliseconds if it looks like seconds
         if (utcTimestamp < 1e12) {
             utcTimestamp *= 1000;
