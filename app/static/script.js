@@ -1,5 +1,9 @@
 
 
+function getColor(i) {
+    return ["3F7D58", "EF9651", "EC5228", "015551", "57B4BA", "F6DC43", "8F87F1", "F7374F", "1B56FD", "2A004E"][i];
+}
+
 function interpolateColor(color1, color2, factor) {
     const c1 = parseInt(color1.slice(1), 16);
     const c2 = parseInt(color2.slice(1), 16);
@@ -28,12 +32,13 @@ const ZibbitClient = (function () {
     let eventSource = null;
     let isCooldown = false;
 
-    const connectedUsers = {};
-    let renderInterval = null;
     const story = [];
+    const connectedUsers = new Set();
+    let renderInterval = null;
     let candidates = [];
 
     const $story = document.getElementById("story");
+    const $connectedUsers = document.getElementById("connected-users-number");
     const $cooldown = document.getElementById("cooldown");
     const $cooldownTimer = document.getElementById("cooldown-timer");
     const $submitBtn = document.getElementById("submit-btn");
@@ -86,6 +91,10 @@ const ZibbitClient = (function () {
         eventSource.addEventListener("word_flag", (e) => {
             console.log("word flag");
             handleWordFlag(JSON.parse(e.data));
+        });
+        eventSource.addEventListener("user_connections", (e) => {
+           console.log("user connection");
+           handleUserConnectionEvent(JSON.parse(e.data));
         });
     }
 
@@ -236,6 +245,7 @@ const ZibbitClient = (function () {
     }
 
     function handleGameStateUpdate(gameState) {
+        setConnectedUsersData(gameState["connected_users"]);
         switch (gameState["game_status"]) {
             case "ERROR":
                 alert("ERROR: check sse data...")
@@ -255,7 +265,7 @@ const ZibbitClient = (function () {
                 setCandidateListData(gameState["candidates"]);
                 break;
             default:
-                alert("UNKNOWN: check sse data...")
+                alert("UNKNOWN: check gamestate sse data...")
                 break;
         }
     }
@@ -272,6 +282,23 @@ const ZibbitClient = (function () {
         });
 
         renderStory();
+    }
+
+    function handleUserConnectionEvent(connectionEvent) {
+        switch (connectionEvent["connection_status"]) {
+            case "user_connected":
+                console.log(`CONNECT: ${connectionEvent["client_ip"]}`);
+                connectedUsers.add(connectionEvent["client_ip"]);
+                break;
+            case "user_disconnected":
+                console.log(`DISCONNECT: ${connectionEvent["client_ip"]}`);
+                connectedUsers.delete(connectionEvent["client_ip"]);
+                break;
+            default:
+                alert("UNKNOWN: check connection sse data...")
+                break;
+        }
+        renderUserConnections();
     }
 
     function startCountdown(utcTimestamp, serverTimestamp, timerElement) {
@@ -331,6 +358,10 @@ const ZibbitClient = (function () {
         startCountdown(event["game_end_utc_time"], event["server_time"], $gameTimer);
     }
 
+    function renderUserConnections() {
+        $connectedUsers.textContent = `x${connectedUsers.size}`;
+    }
+
     function renderStory() {
         $story.childNodes.forEach((child) => child.remove());
         $story.innerHTML = "";
@@ -376,6 +407,13 @@ const ZibbitClient = (function () {
         renderStory();
     }
 
+    function setConnectedUsersData(connectedUsersListData) {
+        connectedUsers.clear();
+        connectedUsersListData.forEach((clientIp) => {
+            connectedUsers.add(clientIp);
+        });
+        renderUserConnections();
+    }
 
     function handleCooldownUpdate(event) {
         isCooldown = true;

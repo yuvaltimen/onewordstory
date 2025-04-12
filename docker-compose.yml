@@ -2,55 +2,15 @@ services:
 
   redis:
     image: redis:7-alpine
-    networks:
-      - backend-network
 
   zibbit_web:
-    image: yuvaltimen/onewordstory:latest
+    ports:
+      - "8000:8000"
     build:
       context: .
       dockerfile: Dockerfile
     depends_on:
       - redis
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.services.zibbit_web.loadbalancer.server.port=8000"
-      - "traefik.http.routers.zibbit_web.rule=Host(`test.domain.local`)"
-      - "traefik.http.routers.zibbit_web.entrypoints=websecure"
-      - "traefik.http.routers.zibbit_web.tls.certresolver=myresolver"
-      - "traefik.enable=true"
-    networks:
-      - traefik-servicenet
-      - backend-network
-
-  traefik:
-    image: traefik:v3.1
-    command:
-      - "--api.insecure=true"
-      - "--providers.docker"
-      - "--entryPoints.web.address=:80"
-      - "--entryPoints.websecure.address=:443"
-      - "--entryPoints.web.http.redirections.entrypoint.to=websecure"
-      - "--entryPoints.web.http.redirections.entrypoint.scheme=https"
-      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
-      - "--certificatesresolvers.myresolver.acme.email=ytimen@yuvaltimen.xyz"
-      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
-    read_only: true
-    ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080"
     volumes:
-      - letsencrypt:/letsencrypt
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - traefik-servicenet
-
-volumes:
-  letsencrypt:
-
-networks:
-  backend-network:
-    name: backend-network
-  traefik-servicenet:
-    name: traefik-servicenet
+      - ./app:/app
+      - ./.env:/.env

@@ -3,6 +3,7 @@ import json
 import os
 import asyncio
 from contextlib import asynccontextmanager
+from pyexpat.errors import messages
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -45,13 +46,16 @@ def get_client_ip(req: Request):
 
 
 @app.get('/events')
-async def sse_events():
+async def sse_events(request: Request):
+    client_ip = get_client_ip(request)
+    await zg.register_user(client_ip)
+
     pubsub = zg.pubsub()
     await pubsub.psubscribe(f"{GAME_EVENTS_CHANNEL_PREFIX}:*")
 
     async def event_generator():
         try:
-            print("sending inital state")
+            print(f"[CONNECT] {client_ip} connected")
             # Give the client the live game state
             initial_game_state = await zg.get_game_state()
             yield ServerSentEvent(event="game_state", data=json.dumps({
@@ -59,20 +63,26 @@ async def sse_events():
                 **initial_game_state
             }))
 
-            # Now stream updates
-            async for message in pubsub.listen():
-                print(message)
-                if message["type"] != "pmessage":
-                    # Ignore Redis internal messages like "subscribe" or "unsubscribe"
-                    continue
-                event_type = message["channel"].split(":")[-1]
-                yield ServerSentEvent(event=event_type, data=json.dumps({
-                    "server_time": datetime.now().timestamp(),
-                    **json.loads(message['data'])
-                }))
+            while True:
+                # Timeout every 5 seconds so we can check if client disconnected
+                try:
+                    message = await asyncio.wait_for(pubsub.get_message(ignore_subscribe_messages=True), timeout=5)
+                except asyncio.TimeoutError:
+                    message = None
+
+                if await request.is_disconnected():
+                    break
+                if message:
+                    event_type = message["channel"].split(":")[-1]
+                    yield ServerSentEvent(event=event_type, data=json.dumps({
+                        "server_time": datetime.now().timestamp(),
+                        **json.loads(message['data'])
+                    }))
         finally:
             await pubsub.punsubscribe(f"{GAME_EVENTS_CHANNEL_PREFIX}:*")
             await pubsub.close()
+            await zg.deregister_user(client_ip)
+            print(f"[DISCONNECT] {client_ip} disconnected")
 
     return EventSourceResponse(event_generator())
 
@@ -82,12 +92,12 @@ async def submit_candidate(request: Request):
     print(f"{client_ip} -> /submit_candidate")
     request_data = await request.json()
     phrase = request_data["phrase"]
-    if await zg.handle_phrase_submission(phrase):
+    if await zg.handle_phrase_submission(client_ip, phrase):
         print("successful submit_candidate")
         return JSONResponse(status_code=200, content='Success')
     else:
         print("failed submit_candidate")
-        return JSONResponse(status_code=400, content='Unable to submit candidate')
+        return JSONResponse(status_code=400, content=f'Unable to submit candidate: {phrase}')
 
 @app.post('/vote')
 async def vote(request: Request):
@@ -97,10 +107,10 @@ async def vote(request: Request):
     candidate_id = request_data["candidate_id"]
     if not candidate_id:
         return 'Empty', 400
-    if await zg.handle_vote(candidate_id):
+    if await zg.handle_vote(client_ip, candidate_id):
         return JSONResponse(status_code=200, content='Success')
     else:
-        return JSONResponse(status_code=400, content='Unable to submit vote')
+        return JSONResponse(status_code=400, content=f'Unable to submit vote: {candidate_id}')
 
 @app.post('/flag_word')
 async def submit_word_flag(request: Request):
@@ -108,10 +118,10 @@ async def submit_word_flag(request: Request):
     print(f"{client_ip} -> /flag_word")
     request_data = await request.json()
     word_id = str(request_data["word_id"])
-    if await zg.handle_word_flag(word_id):
+    if await zg.handle_word_flag(client_ip, word_id):
         return JSONResponse(status_code=200, content='Success')
     else:
-        return JSONResponse(status_code=400, content='Unable to submit flag')
+        return JSONResponse(status_code=400, content=f'Unable to submit flag: {word_id}')
 
 
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")

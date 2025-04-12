@@ -25,6 +25,8 @@ STORY_FLAG_KEY_PREFIX = "story_flag"
 CANDIDATE_AUTOINCR_KEY = "candidate_autoincr"
 # Stores the incrementing ids for words
 WORD_AUTOINCR_KEY = "word_autoincr"
+# Stores the set of connected users
+CONNECTED_USERS_KEY = "connected_users"
 
 # Denotes the channel prefix to subscribe to for game updates
 GAME_EVENTS_CHANNEL_PREFIX = "game_events"
@@ -35,6 +37,7 @@ EVENT_STORY_UPDATE_CHANNEL = "story_update"
 EVENT_CANDIDATE_UPDATE_CHANNEL = "candidate_update"
 EVENT_CANDIDATE_VOTE_CHANNEL = "candidate_vote"
 EVENT_WORD_FLAG_CHANNEL = "word_flag"
+EVENT_USER_CONNECTIONS = "user_connections"
 
 # Length of a game
 GAME_LENGTH_SECONDS = 120
@@ -72,6 +75,21 @@ class ZibbitGame:
     def pubsub(self):
         return self.redis.pubsub()
 
+    async def register_user(self, client_ip):
+        print(f"registering {client_ip}")
+        await self.redis.sadd(CONNECTED_USERS_KEY, client_ip)
+        await self.publish_event(EVENT_USER_CONNECTIONS, {
+            "connection_status": "user_connected",
+            "client_ip": client_ip
+        })
+
+    async def deregister_user(self, client_ip):
+        print(f"de-registering {client_ip}")
+        await self.redis.srem(CONNECTED_USERS_KEY, client_ip)
+        await self.publish_event(EVENT_USER_CONNECTIONS, {
+            "connection_status": "user_disconnected",
+            "client_ip": client_ip
+        })
 
     async def timer_loop(self):
         while True:
@@ -101,6 +119,7 @@ class ZibbitGame:
         candidates_keys = await self.redis.keys(f"{CANDIDATES_KEY_PREFIX}:*")
         candidate_items = await self.redis.mget(candidates_keys)
         game_status = await self.redis.get(GAME_STATUS_KEY) or "ERROR"
+        connected_users = await self.redis.smembers(CONNECTED_USERS_KEY)
 
         return {
             "story": [{
@@ -119,7 +138,8 @@ class ZibbitGame:
             "game_status": game_status,
             "game_start_utc_time": self.game_start_utc_time,
             "game_end_utc_time": self.game_end_utc_time,
-            "next_game_start_utc_time": self.next_game_start_utc_time
+            "next_game_start_utc_time": self.next_game_start_utc_time,
+            "connected_users": list(connected_users)
         }
 
 
@@ -184,7 +204,7 @@ class ZibbitGame:
         starting_key = ending_key - amount
         return list(range(starting_key + 1, ending_key + 1))
 
-    async def handle_phrase_submission(self, phrase: str) -> bool:
+    async def handle_phrase_submission(self, client_ip: str, phrase: str) -> bool:
         phrase = phrase.strip()
         validate_phrase(phrase)
         # Check if phrase has a cooldown submission time, if so reject it
@@ -206,7 +226,7 @@ class ZibbitGame:
             return True
 
 
-    async def handle_vote(self, candidate_id: str) -> bool:
+    async def handle_vote(self, client_ip: str, candidate_id: str) -> bool:
         # Check if phrase is actually a candidate
         candidate_key = f"{CANDIDATES_KEY_PREFIX}:{candidate_id}"
         candidate_info = await self.redis.get(candidate_key)
@@ -271,7 +291,8 @@ class ZibbitGame:
         await self.send_full_story()
 
 
-    async def handle_word_flag(self, word_id: str) -> bool:
+    async def handle_word_flag(self, client_ip: str, word_id: str) -> bool:
+
         # Check if word has already been flagged
         story_items = await self.redis.lrange(STORY_KEY, 0, -1)
         if not word_id in [itm.split("|")[1] for itm in story_items]:
