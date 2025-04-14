@@ -3,7 +3,6 @@ import json
 import os
 import asyncio
 from contextlib import asynccontextmanager
-from http.client import HTTPException
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -42,7 +41,10 @@ app.add_middleware(
 
 
 def get_client_ip(req: Request):
-    return f"{req.client.host}:{req.client.port}"
+    client_ip = req.client.host
+    forwarded_for = req.headers.get("x-forwarded-for")
+    print(f"host=({client_ip})/x-forward-for=({forwarded_for})")
+    return forwarded_for or client_ip
 
 
 @app.get('/events')

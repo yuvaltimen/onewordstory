@@ -18,7 +18,6 @@ function interpolateColor(color1, color2, factor) {
     return `rgb(${r}, ${g}, ${b})`;
 }
 
-
 const ZibbitClient = (function () {
     const styles = getComputedStyle(document.documentElement);
     const startColor = styles.getPropertyValue("--start-color").trim();
