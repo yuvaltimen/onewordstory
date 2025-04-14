@@ -15,8 +15,8 @@ from zibbit import ZibbitGame, GAME_EVENTS_CHANNEL_PREFIX
 REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
 
-APP_HOST = os.getenv('REDIS_HOST', '0.0.0.0')
-APP_PORT = int(os.getenv('REDIS_HOST', '8000'))
+APP_HOST = os.getenv('APP_HOST', '0.0.0.0')
+APP_PORT = int(os.getenv('APP_PORT', '8000'))
 zg = ZibbitGame(redis_host=REDIS_HOST, redis_port=REDIS_PORT)
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 
