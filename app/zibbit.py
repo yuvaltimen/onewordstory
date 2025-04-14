@@ -74,9 +74,9 @@ MAX_PHRASE_WORD_LENGTH = 5
 # TTL for restriction on submitting the same phrase again
 CANDIDATE_SUBMISSION_COOLDOWN_SECONDS = 20
 # Number of unique votes required for a candidate phrase to be appended to the story
-CANDIDATE_VOTE_THRESHOLD = 1
+CANDIDATE_VOTE_THRESHOLD = 3
 # Number of unique word flags required for a word to be removed from the story
-WORD_FLAG_THRESHOLD = 1
+WORD_FLAG_THRESHOLD = 3
 
 
 def validate_phrase(inp: str):
