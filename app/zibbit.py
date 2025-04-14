@@ -74,9 +74,9 @@ MAX_PHRASE_WORD_LENGTH = 5
 # TTL for restriction on submitting the same phrase again
 CANDIDATE_SUBMISSION_COOLDOWN_SECONDS = 20
 # Number of unique votes required for a candidate phrase to be appended to the story
-CANDIDATE_VOTE_THRESHOLD = 3
+CANDIDATE_VOTE_THRESHOLD = 1
 # Number of unique word flags required for a word to be removed from the story
-WORD_FLAG_THRESHOLD = 3
+WORD_FLAG_THRESHOLD = 1
 
 
 def validate_phrase(inp: str):
@@ -133,37 +133,20 @@ class ZibbitGame:
 
 
     async def get_game_state(self):
-        full_story = await self.redis.lrange(STORY_KEY, 0, -1)
-        word_and_word_ids = [itm.split("|") for itm in full_story]
-        words = [itm[0] for itm in word_and_word_ids]
-        word_ids = [itm[1] for itm in word_and_word_ids]
-        word_flag_keys = [f"{STORY_FLAG_KEY_PREFIX}:{word_id}" for word_id in word_ids]
-        word_flags = await self.redis.mget(word_flag_keys)
-
+        word_items = await self.redis.lrange(STORY_KEY, 0, -1)
         candidates_keys = await self.redis.keys(f"{CANDIDATES_KEY_PREFIX}:*")
         candidate_items = await self.redis.mget(candidates_keys)
         game_status = await self.redis.get(GAME_STATUS_KEY) or "ERROR"
         connected_users = await self.redis.smembers(CONNECTED_USERS_KEY)
 
         return {
-            "story": [{
-                "word": words[i],
-                "word_id": word_ids[i],
-                "flags": word_flags[i] or 0
-            } for i in range(len(word_ids))],
-            "candidates": [{
-                "candidate_id": candidate_key.split(":")[1],
-                "phrase": candidate_items[idx].split("|")[0],
-                "votes": candidate_items[idx].split("|")[1] or 0,
-                "expiration_utc_time": (
-                        datetime.now() + timedelta(seconds=await self.redis.ttl(candidate_key))
-                ).timestamp()
-            } for idx, candidate_key  in enumerate(candidates_keys)],
+            "story": word_items,
+            "candidates": candidate_items,
             "game_status": game_status,
             "game_start_utc_time": self.game_start_utc_time,
             "game_end_utc_time": self.game_end_utc_time,
             "next_game_start_utc_time": self.next_game_start_utc_time,
-            "connected_users": list(connected_users)
+            "connected_users": [*connected_users]
         }
 
 
@@ -238,11 +221,10 @@ class ZibbitGame:
         else:
             candidate_id = (await self.get_autoincr_candidate_ids())[0]
             candidate_key = f"{CANDIDATES_KEY_PREFIX}:{candidate_id}"
-            # Set key as candidate_id, value to be phrase|num_votes (initialized to 0)
             candidate_item = {
                 "candidate_id": candidate_id,
                 "phrase": phrase,
-                "votes": 0,
+                "votes": [],
                 "creator": client_ip,
                 "expiration_utc_time": (datetime.now() + timedelta(seconds=CANDIDATE_DECAY_SECONDS)).timestamp()
             }
@@ -252,7 +234,7 @@ class ZibbitGame:
             return True
 
 
-    async def handle_vote(self, client_ip: str, candidate_id: str) -> bool:
+    async def handle_vote(self, client_ip: str, candidate_id: int) -> bool:
         # Check if phrase is actually a candidate
         candidate_key = f"{CANDIDATES_KEY_PREFIX}:{candidate_id}"
         candidate_info = await self.redis.get(candidate_key)
@@ -262,11 +244,18 @@ class ZibbitGame:
             candidate_info = json.loads(candidate_info)
             candidate_phrase, candidate_votes, creator = candidate_info['phrase'], candidate_info['votes'], candidate_info['creator']
             if client_ip == creator:
+                # Can't vote for your own phrase
                 return False
             cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{candidate_phrase}"
-            # Reset candidate cooldown time
-            await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
-            updated_candidate_votes = candidate_votes.append(client_ip)
+            if client_ip in candidate_votes:
+                # If client already voted for this, voting again should un-vote
+                updated_candidate_votes = list(filter(lambda ip_addr: ip_addr != client_ip, candidate_votes))
+                vote_added = False
+            else:
+                # Reset candidate cooldown time
+                await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
+                updated_candidate_votes = [*candidate_votes, client_ip]
+                vote_added = True
 
             if len(updated_candidate_votes) >= CANDIDATE_VOTE_THRESHOLD:
                 await self.redis.delete(candidate_key)
@@ -280,10 +269,16 @@ class ZibbitGame:
                 await self.handle_insert_phrase_to_story(candidate_info)
                 return True
             else:
-                # Votes keep the candidate alive for longer
+
                 remaining_ttl = await self.redis.ttl(candidate_key)
-                updated_ttl = remaining_ttl + len(updated_candidate_votes)
-                new_expiration_utc_time = (datetime.now() + timedelta(seconds=updated_ttl)).timestamp()
+                if vote_added:
+                    # Votes keep the candidate alive for longer
+                    updated_ttl = remaining_ttl + len(updated_candidate_votes)
+                    new_expiration_utc_time = (datetime.now() + timedelta(seconds=updated_ttl)).timestamp()
+                else:
+                    updated_ttl = remaining_ttl
+                    new_expiration_utc_time = (datetime.now() + timedelta(seconds=updated_ttl)).timestamp()
+
                 await self.redis.setex(candidate_key, updated_ttl, json.dumps({
                     "candidate_id": candidate_id,
                     "phrase": candidate_phrase,
@@ -305,21 +300,14 @@ class ZibbitGame:
         full_story = await self.redis.lrange(STORY_KEY, 0, -1)
         word_items = [json.loads(itm) for itm in full_story]
         await self.publish_event(EVENT_STORY_UPDATE_CHANNEL, {
-            "story": [{
-                "word_id": itm["word_id"],
-                "word": itm["word"],
-                "flags": itm["flags"] or [],
-                "creator": itm["creator"],
-            } for itm in word_items]
+            "story": word_items
         })
 
 
     async def handle_insert_phrase_to_story(self, candidate_info: dict):
         # Tokenize phrase and insert
-        # Each wordItem is word|word_id
         candidate_phrase, creator = candidate_info['phrase'], candidate_info['creator']
         words = candidate_phrase.split(" ")
-
         next_word_ids = await self.get_autoincr_word_ids(len(words))
         word_items = [json.dumps({
             "word_id": next_word_ids[idx],
@@ -333,11 +321,11 @@ class ZibbitGame:
         await self.send_full_story()
 
 
-    async def handle_word_flag(self, client_ip: str, word_id: str) -> bool:
+    async def handle_word_flag(self, client_ip: str, word_id: int) -> bool:
         # Check if word has already been flagged
         full_story = await self.redis.lrange(STORY_KEY, 0, -1)
         story_items = [json.loads(itm) for itm in full_story]
-        if not word_id in [itm["word_id"] for itm in story_items]:
+        if not (word_id in [itm["word_id"] for itm in story_items]):
             return False
         word_item = list(filter(lambda itm: itm["word_id"] == word_id, story_items))[0]
         creator = word_item["creator"]
@@ -345,7 +333,7 @@ class ZibbitGame:
             return False
         word_flags = word_item["flags"]
         if client_ip in word_flags:
-            # If client already flagged the word, remove the client's ip from the flag list (ie. unflag it)
+            # If client already flagged the word, remove the client's ip from the flag list (ie. un-flag it)
             updated_word_flags = list(filter(lambda flagged_ip: flagged_ip != client_ip, word_flags))
         else:
             updated_word_flags = [*word_flags, client_ip]
@@ -355,7 +343,7 @@ class ZibbitGame:
             new_story = list(filter(lambda itm: itm["word_id"] != word_id, story_items))
             await self.redis.delete(STORY_KEY)
             if new_story:
-                await self.redis.rpush(STORY_KEY, *new_story)
+                await self.redis.rpush(STORY_KEY, *[json.dumps(story_itm) for story_itm in new_story])
             # Send single update
             await self.send_full_story()
         else:
@@ -366,7 +354,7 @@ class ZibbitGame:
             } for word_item in story_items]
             await self.redis.delete(STORY_KEY)
             if new_story:
-                await self.redis.rpush(STORY_KEY, *new_story)
+                await self.redis.rpush(STORY_KEY, *[json.dumps(story_itm) for story_itm in new_story])
             await self.publish_event(EVENT_WORD_FLAG_CHANNEL, {
                 "word_id": word_id,
                 "flags": updated_word_flags

@@ -118,7 +118,7 @@ async def submit_word_flag(request: Request):
     client_ip = get_client_ip(request)
     print(f"{client_ip} -> /flag_word")
     request_data = await request.json()
-    word_id = str(request_data["word_id"])
+    word_id = int(request_data["word_id"])
     if await zg.handle_word_flag(client_ip, word_id):
         return JSONResponse(status_code=200, content='Success')
     else:

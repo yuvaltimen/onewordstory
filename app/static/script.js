@@ -1,9 +1,4 @@
 
-
-function getColor(i) {
-    return ["3F7D58", "EF9651", "EC5228", "015551", "57B4BA", "F6DC43", "8F87F1", "F7374F", "1B56FD", "2A004E"][i];
-}
-
 function interpolateColor(color1, color2, factor) {
     const c1 = parseInt(color1.slice(1), 16);
     const c2 = parseInt(color2.slice(1), 16);
@@ -157,14 +152,14 @@ const ZibbitClient = (function () {
 
     function handleCandidateVote(candidateVoteData) {
         const expirationTime = candidateVoteData["expiration_utc_time"];
-        const votes = candidateVoteData["votes"];
+        const votes = candidateVoteData["votes"] || [];
         const candidateId = candidateVoteData["candidate_id"];
         if (!!expirationTime) {
             // Update the candidate object
             candidates.forEach(obj => {
                 if (String(obj["candidate_id"]) === String(candidateId)) {
                     obj["expiration_utc_time"] = expirationTime;
-                    obj["votes"] = Number(votes);
+                    obj["votes"] = votes;
                 }
             })
         } else {
@@ -180,9 +175,8 @@ const ZibbitClient = (function () {
         $candidateList.innerHTML = "";
 
         candidates.forEach((candidateItem) => {
-
             const phrase = candidateItem["phrase"];
-            const votes = candidateItem["votes"];
+            const numVotes = (candidateItem["votes"] || []).length;
             const candidateId = candidateItem["candidate_id"];
 
             // Create innermost elements
@@ -191,7 +185,7 @@ const ZibbitClient = (function () {
             phraseTextSpan.className = "phrase-text";
             phraseTextSpan.textContent = phrase;
             voteCountSpan.className = "vote-count";
-            voteCountSpan.textContent = `${votes}`;
+            voteCountSpan.textContent = `${numVotes}`;
 
             // Create intermediary element
             const voteBtn = document.createElement("button");
@@ -226,7 +220,7 @@ const ZibbitClient = (function () {
             const btn = li.querySelector(".vote-btn");
 
             if (millis <= 0) {
-                // li.remove();
+                li.remove();
                 return false;
             }
 
@@ -244,6 +238,8 @@ const ZibbitClient = (function () {
     }
 
     function handleGameStateUpdate(gameState) {
+        console.log("game state is: ");
+        console.log(gameState);
         setConnectedUsersData(gameState["connected_users"]);
         switch (gameState["game_status"]) {
             case "ERROR":
@@ -272,11 +268,11 @@ const ZibbitClient = (function () {
     function handleWordFlag(wordFlagEvent) {
         console.log(wordFlagEvent);
         const wordId = wordFlagEvent["word_id"];
-        const numFlags = wordFlagEvent["flags"];
+        const flags = wordFlagEvent["flags"];
 
         story.forEach((storyItem) => {
             if (storyItem["word_id"] === wordId) {
-                storyItem.flags = numFlags;
+                storyItem.flags = flags;
             }
         });
 
@@ -362,9 +358,9 @@ const ZibbitClient = (function () {
         $story.childNodes.forEach((child) => child.remove());
         $story.innerHTML = "";
         story.forEach((wordItem) => {
-            const wordText = wordItem["word"];
             const wordId = wordItem["word_id"];
-            const numFlags = Number(wordItem["flags"]);
+            const wordText = wordItem["word"];
+            const numFlags = wordItem["flags"].length;
 
             const wordElement = document.createElement("span");
             wordElement.classList.add("story-word", "notification-wrapper");
@@ -390,7 +386,6 @@ const ZibbitClient = (function () {
 
 
     function setCandidateListData(candidateListData) {
-        console.log(candidateListData);
         candidates.length = 0;
         candidates.push(...candidateListData);
         renderCandidates();
