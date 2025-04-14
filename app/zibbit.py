@@ -140,8 +140,8 @@ class ZibbitGame:
         connected_users = await self.redis.smembers(CONNECTED_USERS_KEY)
 
         return {
-            "story": word_items,
-            "candidates": candidate_items,
+            "story": [json.loads(itm) for itm in word_items],
+            "candidates": [json.loads(itm) for itm in candidate_items],
             "game_status": game_status,
             "game_start_utc_time": self.game_start_utc_time,
             "game_end_utc_time": self.game_end_utc_time,
@@ -192,10 +192,6 @@ class ZibbitGame:
         candidates_cooldown = await self.redis.keys(f"{COOLDOWN_PHRASES_KEY_PREFIX}:*")
         if candidates_cooldown:
             await self.redis.delete(*candidates_cooldown)
-        # Clear word flags
-        word_flags = await self.redis.keys(f"{STORY_FLAG_KEY_PREFIX}:*")
-        if word_flags:
-            await self.redis.delete(*word_flags)
         # Reset autoincrement ids back to 1
         await self.redis.set(CANDIDATE_AUTOINCR_KEY, 1)
         await self.redis.set(WORD_AUTOINCR_KEY, 1)
