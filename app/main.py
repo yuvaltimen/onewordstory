@@ -83,7 +83,7 @@ async def sse_events(request: Request):
                     }))
         finally:
             print("entered finally")
-            await zg.deregister_user(client_ip)
+            asyncio.create_task(zg.deregister_user(client_ip))
             await pubsub.punsubscribe(f"{GAME_EVENTS_CHANNEL_PREFIX}:*")
             await pubsub.close()
 

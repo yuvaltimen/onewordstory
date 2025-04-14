@@ -94,10 +94,10 @@ class ZibbitGame:
         self.game_end_utc_time = None
         self.next_game_start_utc_time = None
         self.redis = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
-
+        self.pubsub_redis = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
 
     def pubsub(self):
-        return self.redis.pubsub()
+        return self.pubsub_redis.pubsub()
 
     async def register_user(self, client_ip):
         print(f"registering {client_ip}")
@@ -108,12 +108,17 @@ class ZibbitGame:
         })
 
     async def deregister_user(self, client_ip):
-        print(f"de-registering {client_ip}")
-        await self.redis.srem(CONNECTED_USERS_KEY, client_ip)
-        await self.publish_event(EVENT_USER_CONNECTIONS, {
-            "connection_status": "user_disconnected",
-            "client_ip": client_ip
-        })
+        try:
+            print(f"de-registering {client_ip}")
+            await self.redis.srem(CONNECTED_USERS_KEY, client_ip)
+            print(f"Removed {client_ip} from CONNECTED_USERS_KEY")
+            await self.publish_event(EVENT_USER_CONNECTIONS, {
+                "connection_status": "user_disconnected",
+                "client_ip": client_ip
+            })
+            print("Published user_disconnected event")
+        except Exception as e:
+            print(f"Error in deregister_user: {e}")
 
     async def timer_loop(self):
         while True:
