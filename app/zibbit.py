@@ -3,6 +3,29 @@ from datetime import datetime, UTC, timedelta
 import asyncio
 import redis.asyncio as redis
 
+"""
+Story keys: [
+    {
+        "word_id": 2,
+        "word": "the",
+        "flags": ["112.3.2.1", "165.32.1.1"],
+        "creator": "172.0.0.1"
+    },
+    ...
+]
+
+Candidates: [
+    {
+        "candidate_id": 3,
+        "phrase": "monkey went to",
+        "votes": ["112.3.2.1", "172.0.0.1"],
+        "creator": "165.32.1.1",
+        "expiration_utc_time": 123456.123
+    },
+    ...
+]
+"""
+
 # Game status (ex. COOLDOWN or IN_PLAY)
 GAME_STATUS_KEY = "game_status"
 # Stores current time remaining in game cooldown timer
@@ -15,6 +38,7 @@ STORY_KEY = "story"
 COOLDOWN_PHRASES_KEY_PREFIX = "cooldown_phrases"
 # Prefix for candidate phrases
 CANDIDATES_KEY_PREFIX = "candidates"
+CANDIDATES_VOTES_KEY_PREFIX = "candidate_votes"
 # Predix for users
 USER_RATE_LIMIT_PREFIX = "user"
 # Stores the game ttl
@@ -215,14 +239,16 @@ class ZibbitGame:
             candidate_id = (await self.get_autoincr_candidate_ids())[0]
             candidate_key = f"{CANDIDATES_KEY_PREFIX}:{candidate_id}"
             # Set key as candidate_id, value to be phrase|num_votes (initialized to 0)
-            await self.redis.setex(candidate_key, CANDIDATE_DECAY_SECONDS, f"{phrase}|0")
-            await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
-            await self.publish_event(EVENT_CANDIDATE_UPDATE_CHANNEL, {
+            candidate_item = {
                 "candidate_id": candidate_id,
                 "phrase": phrase,
                 "votes": 0,
+                "creator": client_ip,
                 "expiration_utc_time": (datetime.now() + timedelta(seconds=CANDIDATE_DECAY_SECONDS)).timestamp()
-            })
+            }
+            await self.redis.setex(candidate_key, CANDIDATE_DECAY_SECONDS, json.dumps(candidate_item))
+            await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
+            await self.publish_event(EVENT_CANDIDATE_UPDATE_CHANNEL, candidate_item)
             return True
 
 
@@ -233,58 +259,74 @@ class ZibbitGame:
         if not candidate_info:
             return False
         else:
-            candidate_phrase, candidate_num_votes = candidate_info.split("|")
+            candidate_info = json.loads(candidate_info)
+            candidate_phrase, candidate_votes, creator = candidate_info['phrase'], candidate_info['votes'], candidate_info['creator']
+            if client_ip == creator:
+                return False
             cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{candidate_phrase}"
             # Reset candidate cooldown time
             await self.redis.setex(cooldown_key, CANDIDATE_SUBMISSION_COOLDOWN_SECONDS, "cooldown")
-            updated_num_votes = int(candidate_num_votes) + 1
+            updated_candidate_votes = candidate_votes.append(client_ip)
 
-            if updated_num_votes >= CANDIDATE_VOTE_THRESHOLD:
+            if len(updated_candidate_votes) >= CANDIDATE_VOTE_THRESHOLD:
                 await self.redis.delete(candidate_key)
                 await self.publish_event(EVENT_CANDIDATE_VOTE_CHANNEL, {
                     "candidate_id": candidate_id,
                     "phrase": candidate_phrase,
-                    "votes": updated_num_votes,
+                    "votes": updated_candidate_votes,
+                    "creator": creator,
                     "expiration_utc_time": None
                 })
-                await self.handle_insert_phrase_to_story(candidate_phrase)
+                await self.handle_insert_phrase_to_story(candidate_info)
                 return True
             else:
                 # Votes keep the candidate alive for longer
                 remaining_ttl = await self.redis.ttl(candidate_key)
-                updated_ttl = remaining_ttl + updated_num_votes
-                await self.redis.setex(candidate_key, updated_ttl, f"{candidate_phrase}|{updated_num_votes}")
+                updated_ttl = remaining_ttl + len(updated_candidate_votes)
+                new_expiration_utc_time = (datetime.now() + timedelta(seconds=updated_ttl)).timestamp()
+                await self.redis.setex(candidate_key, updated_ttl, json.dumps({
+                    "candidate_id": candidate_id,
+                    "phrase": candidate_phrase,
+                    "votes": updated_candidate_votes,
+                    "creator": creator,
+                    "expiration_utc_time": new_expiration_utc_time
+                }))
                 await self.publish_event(EVENT_CANDIDATE_VOTE_CHANNEL, {
                     "candidate_id": candidate_id,
                     "phrase": candidate_phrase,
-                    "votes": updated_num_votes,
-                    "expiration_utc_time": (datetime.now() + timedelta(seconds=updated_ttl)).timestamp()
+                    "votes": updated_candidate_votes,
+                    "creator": creator,
+                    "expiration_utc_time": new_expiration_utc_time
                 })
                 return True
 
 
     async def send_full_story(self):
         full_story = await self.redis.lrange(STORY_KEY, 0, -1)
-        word_and_word_ids = [itm.split("|") for itm in full_story]
-        words = [itm[0] for itm in word_and_word_ids]
-        word_ids = [itm[1] for itm in word_and_word_ids]
-        word_flag_keys = [f"{STORY_FLAG_KEY_PREFIX}:{word_id}" for word_id in word_ids]
-        word_flags = await self.redis.mget(word_flag_keys)
+        word_items = [json.loads(itm) for itm in full_story]
         await self.publish_event(EVENT_STORY_UPDATE_CHANNEL, {
             "story": [{
-                "word": words[i],
-                "word_id": word_ids[i],
-                "flags": word_flags[i] or 0
-            } for i in range(len(word_ids))]
+                "word_id": itm["word_id"],
+                "word": itm["word"],
+                "flags": itm["flags"] or [],
+                "creator": itm["creator"],
+            } for itm in word_items]
         })
 
 
-    async def handle_insert_phrase_to_story(self, phrase: str):
+    async def handle_insert_phrase_to_story(self, candidate_info: dict):
         # Tokenize phrase and insert
         # Each wordItem is word|word_id
-        words = phrase.split(" ")
+        candidate_phrase, creator = candidate_info['phrase'], candidate_info['creator']
+        words = candidate_phrase.split(" ")
+
         next_word_ids = await self.get_autoincr_word_ids(len(words))
-        word_items = [f"{w}|{next_word_ids[idx]}" for idx, w in enumerate(words)]
+        word_items = [json.dumps({
+            "word_id": next_word_ids[idx],
+            "word": w,
+            "flags": [],
+            "creator": creator
+        }) for idx, w in enumerate(words)]
         await self.redis.rpush(STORY_KEY, *word_items)
 
         # Send single update
@@ -293,23 +335,41 @@ class ZibbitGame:
 
     async def handle_word_flag(self, client_ip: str, word_id: str) -> bool:
         # Check if word has already been flagged
-        story_items = await self.redis.lrange(STORY_KEY, 0, -1)
-        if not word_id in [itm.split("|")[1] for itm in story_items]:
+        full_story = await self.redis.lrange(STORY_KEY, 0, -1)
+        story_items = [json.loads(itm) for itm in full_story]
+        if not word_id in [itm["word_id"] for itm in story_items]:
             return False
-        word_flag_key = f"{STORY_FLAG_KEY_PREFIX}:{word_id}"
-        word_flags_counter = await self.redis.incr(word_flag_key)
-        if word_flags_counter >= WORD_FLAG_THRESHOLD:
+        word_item = list(filter(lambda itm: itm["word_id"] == word_id, story_items))[0]
+        creator = word_item["creator"]
+        if client_ip == creator:
+            return False
+        word_flags = word_item["flags"]
+        if client_ip in word_flags:
+            # If client already flagged the word, remove the client's ip from the flag list (ie. unflag it)
+            updated_word_flags = list(filter(lambda flagged_ip: flagged_ip != client_ip, word_flags))
+        else:
+            updated_word_flags = [*word_flags, client_ip]
+
+        if len(updated_word_flags) >= WORD_FLAG_THRESHOLD:
             # Remove the word from the story
-            new_story = list(filter(lambda x: x.split("|")[1] != word_id, story_items))
-            await self.redis.delete(STORY_KEY, word_flag_key)
+            new_story = list(filter(lambda itm: itm["word_id"] != word_id, story_items))
+            await self.redis.delete(STORY_KEY)
             if new_story:
                 await self.redis.rpush(STORY_KEY, *new_story)
             # Send single update
             await self.send_full_story()
         else:
+            # Update the word item in the story
+            new_story = [word_item if word_item["word_id"] != word_id else {
+                **word_item,
+                "flags": updated_word_flags
+            } for word_item in story_items]
+            await self.redis.delete(STORY_KEY)
+            if new_story:
+                await self.redis.rpush(STORY_KEY, *new_story)
             await self.publish_event(EVENT_WORD_FLAG_CHANNEL, {
                 "word_id": word_id,
-                "flags": word_flags_counter
+                "flags": updated_word_flags
             })
         return True
 

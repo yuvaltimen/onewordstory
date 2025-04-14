@@ -3,7 +3,7 @@ import json
 import os
 import asyncio
 from contextlib import asynccontextmanager
-from pyexpat.errors import messages
+from http.client import HTTPException
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -42,7 +42,7 @@ app.add_middleware(
 
 
 def get_client_ip(req: Request):
-    return req.client.host
+    return f"{req.client.host}:{req.client.port}"
 
 
 @app.get('/events')
@@ -71,6 +71,7 @@ async def sse_events(request: Request):
                     message = None
 
                 if await request.is_disconnected():
+                    print("hit disconnect")
                     break
                 if message:
                     event_type = message["channel"].split(":")[-1]
@@ -79,10 +80,10 @@ async def sse_events(request: Request):
                         **json.loads(message['data'])
                     }))
         finally:
+            print("entered finally")
+            await zg.deregister_user(client_ip)
             await pubsub.punsubscribe(f"{GAME_EVENTS_CHANNEL_PREFIX}:*")
             await pubsub.close()
-            await zg.deregister_user(client_ip)
-            print(f"[DISCONNECT] {client_ip} disconnected")
 
     return EventSourceResponse(event_generator())
 
