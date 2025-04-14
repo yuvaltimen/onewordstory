@@ -7,9 +7,6 @@ services:
 
   zibbit_web:
     image: yuvaltimen/onewordstory:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
     depends_on:
       - redis
     labels:
