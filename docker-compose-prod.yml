@@ -23,7 +23,7 @@ services:
       - backend-network
 
   traefik:
-    image: traefik:v3.1
+    image: traefik:v3.3.5
     command:
       - "--api.insecure=true"
       - "--providers.docker"
@@ -34,6 +34,8 @@ services:
       - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
       - "--certificatesresolvers.myresolver.acme.email=ytimen@yuvaltimen.xyz"
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=DEBUG"
+      - "--accesslog=true"
     read_only: true
     ports:
       - "80:80"
