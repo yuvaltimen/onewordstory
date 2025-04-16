@@ -151,7 +151,12 @@ class ZibbitGame:
             "game_start_utc_time": self.game_start_utc_time,
             "game_end_utc_time": self.game_end_utc_time,
             "next_game_start_utc_time": self.next_game_start_utc_time,
-            "connected_users": [*connected_users]
+            "connected_users": [*connected_users],
+            "game_constants": {
+                "CANDIDATE_DECAY_SECONDS": CANDIDATE_DECAY_SECONDS,
+                "CANDIDATE_VOTE_THRESHOLD": CANDIDATE_VOTE_THRESHOLD,
+                "WORD_FLAG_THRESHOLD": WORD_FLAG_THRESHOLD
+            }
         }
 
 

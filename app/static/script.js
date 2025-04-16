@@ -31,6 +31,10 @@ const ZibbitClient = (function () {
     let renderInterval = null;
     let candidates = [];
 
+    let CANDIDATE_DECAY_SECONDS = null;
+    let CANDIDATE_VOTE_THRESHOLD = null;
+    let WORD_FLAG_THRESHOLD = null;
+
     const $story = document.getElementById("story");
     const $connectedUsers = document.getElementById("connected-users-number");
     const $cooldown = document.getElementById("cooldown");
@@ -184,7 +188,7 @@ const ZibbitClient = (function () {
             phraseTextSpan.className = "phrase-text";
             phraseTextSpan.textContent = phrase;
             voteCountSpan.className = "vote-count";
-            voteCountSpan.textContent = `${numVotes}`;
+            voteCountSpan.textContent = `${numVotes}/${CANDIDATE_VOTE_THRESHOLD}`;
 
             // Create intermediary element
             const voteBtn = document.createElement("button");
@@ -223,7 +227,7 @@ const ZibbitClient = (function () {
                 return false;
             }
 
-            const progress = (10000 - millis) / 10000;
+            const progress = ((CANDIDATE_DECAY_SECONDS * 1000) - millis) / (CANDIDATE_DECAY_SECONDS * 1000);
             const color = interpolateColor(startColor, endColor, progress);
             btn.style.setProperty("background-color", color, "important");
 
@@ -240,6 +244,7 @@ const ZibbitClient = (function () {
         console.log("game state is: ");
         console.log(gameState);
         setConnectedUsersData(gameState["connected_users"]);
+        handleGameConstantsData(gameState["game_constants"]);
         switch (gameState["game_status"]) {
             case "ERROR":
                 alert("ERROR: check sse data...")
@@ -403,6 +408,12 @@ const ZibbitClient = (function () {
             connectedUsers.add(clientIp);
         });
         renderUserConnections();
+    }
+
+    function handleGameConstantsData(gameConstantsData) {
+        CANDIDATE_DECAY_SECONDS = gameConstantsData["CANDIDATE_DECAY_SECONDS"];
+        CANDIDATE_VOTE_THRESHOLD = gameConstantsData["CANDIDATE_VOTE_THRESHOLD"];
+        WORD_FLAG_THRESHOLD = gameConstantsData["WORD_FLAG_THRESHOLD"];
     }
 
     function handleCooldownUpdate(event) {
