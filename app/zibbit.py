@@ -218,7 +218,7 @@ class ZibbitGame:
         return list(range(starting_key + 1, ending_key + 1))
 
     async def handle_phrase_submission(self, client_ip: str, phrase: str) -> bool:
-        phrase = phrase.strip()
+        phrase = phrase.strip().lower()
         validate_phrase(phrase)
         # Check if phrase has a cooldown submission time, if so reject it
         cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{phrase}"
@@ -334,9 +334,6 @@ class ZibbitGame:
         if not (word_id in [itm["word_id"] for itm in story_items]):
             return False
         word_item = list(filter(lambda itm: itm["word_id"] == word_id, story_items))[0]
-        creator = word_item["creator"]
-        if client_ip == creator:
-            return False
         word_flags = word_item["flags"]
         if client_ip in word_flags:
             # If client already flagged the word, remove the client's ip from the flag list (ie. un-flag it)
