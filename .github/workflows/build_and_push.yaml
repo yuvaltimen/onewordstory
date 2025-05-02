@@ -3,7 +3,10 @@ name: Build and Push Zibbit
 on:
   push:
     branches: ["main"]
-  # Allows manually runs from the Actions tab
+    paths-ignore:
+      - 'docker-compose*.yml'
+
+      # Allows manually runs from the Actions tab
   workflow_dispatch:
 
 # Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
