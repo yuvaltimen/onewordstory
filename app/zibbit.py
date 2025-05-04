@@ -88,13 +88,24 @@ def validate_phrase(inp: str):
 
 class ZibbitGame:
 
-    def __init__(self, redis_host="redis", redis_port=6379):
+    def __init__(self, redis_host="redis", redis_port=6379, redis_user="user", redis_pass="pass"):
         self.game_status = "COOLDOWN"
         self.game_start_utc_time = None
         self.game_end_utc_time = None
         self.next_game_start_utc_time = None
-        self.redis = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
-        self.pubsub_redis = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
+        self.redis = redis.StrictRedis(
+            host=redis_host,
+            port=redis_port,
+            decode_responses=True,
+            username=redis_user,
+            password=redis_pass)
+        self.pubsub_redis = redis.StrictRedis(
+            host=redis_host,
+            port=redis_port,
+            decode_responses=True,
+            username=redis_user,
+            password=redis_pass)
+
 
     def pubsub(self):
         return self.pubsub_redis.pubsub()

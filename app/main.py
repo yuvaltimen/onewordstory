@@ -14,10 +14,12 @@ from zibbit import ZibbitGame, GAME_EVENTS_CHANNEL_PREFIX
 
 REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+REDIS_USERNAME = os.getenv('REDIS_USERNAME', 'user')
+REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', 'pass')
 
 APP_HOST = os.getenv('APP_HOST', '0.0.0.0')
 APP_PORT = int(os.getenv('APP_PORT', '8000'))
-zg = ZibbitGame(redis_host=REDIS_HOST, redis_port=REDIS_PORT)
+zg = ZibbitGame(redis_host=REDIS_HOST, redis_port=REDIS_PORT, redis_user=REDIS_USERNAME, redis_pass=REDIS_PASSWORD)
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 
 @asynccontextmanager
@@ -128,6 +130,7 @@ async def submit_word_flag(request: Request):
 
 
 app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+
 
 if __name__ == "__main__":
     uvicorn.run(
