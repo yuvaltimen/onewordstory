@@ -79,7 +79,7 @@ CANDIDATE_VOTE_THRESHOLD = 3
 WORD_FLAG_THRESHOLD = 3
 
 
-def validate_phrase(inp: str):
+async def validate_phrase(inp: str):
     if "|" in inp:
         raise ValueError(f"bad input: {inp}")
     if len(inp.strip().split(" ")) > MAX_PHRASE_WORD_LENGTH:
@@ -230,7 +230,7 @@ class ZibbitGame:
 
     async def handle_phrase_submission(self, client_ip: str, phrase: str) -> bool:
         phrase = phrase.strip().lower()
-        validate_phrase(phrase)
+        await validate_phrase(phrase)
         # Check if phrase has a cooldown submission time, if so reject it
         cooldown_key = f"{COOLDOWN_PHRASES_KEY_PREFIX}:{phrase}"
         if await self.redis.get(cooldown_key):
